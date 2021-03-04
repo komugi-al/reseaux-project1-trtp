@@ -7,17 +7,20 @@ CFLAGS += -c -std=gnu99 -Wall -Werror -Wextra -O2
 CFLAGS += -D_COLOR
 
 # You may want to add something here
-LDFLAGS +=
+LDFLAGS += -lz
 
 # Adapt these as you want to fit with your project
 SENDER_SOURCES = $(wildcard src/sender.c src/log.c)
 RECEIVER_SOURCES = $(wildcard src/receiver.c src/log.c)
+PACKET_SOURCES = $(wildcard src/packet_implem.c)
 
 SENDER_OBJECTS = $(SENDER_SOURCES:.c=.o)
 RECEIVER_OBJECTS = $(RECEIVER_SOURCES:.c=.o)
+PACKET_OBJECTS = $(PACKET_SOURCES:.c=.o)
 
 SENDER = sender
 RECEIVER = receiver
+PACKET = packet
 
 all: $(SENDER) $(RECEIVER)
 
@@ -27,16 +30,19 @@ $(SENDER): $(SENDER_OBJECTS)
 $(RECEIVER): $(RECEIVER_OBJECTS)
 	$(CC) $(RECEIVER_OBJECTS) -o $@ $(LDFLAGS)
 
+$(PACKET): $(PACKET_OBJECTS)
+	$(CC) $(PACKET_OBJECTS) -o $@ $(LDFLAGS)
+
 %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 .PHONY: clean mrproper
 
 clean:
-	rm -f $(SENDER_OBJECTS) $(RECEIVER_OBJECTS)
+	rm -f $(SENDER_OBJECTS) $(RECEIVER_OBJECTS) $(PACKET_OBJECTS)
 
 mrproper:
-	rm -f $(SENDER) $(RECEIVER)
+	rm -f $(SENDER) $(RECEIVER) $(PACKET)
 
 # It is likely that you will need to update this
 tests: all
