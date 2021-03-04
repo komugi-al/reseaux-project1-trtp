@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "log.h"
+#include "socket_helpers.h"
 
 int print_usage(char *prog_name) {
     ERROR("Usage:\n\t%s [-s stats_filename] listen_ip listen_port", prog_name);
@@ -53,6 +54,12 @@ int main(int argc, char **argv) {
     DEBUG("You can only see me if %s", "you built me using `make debug`");
     ERROR("This is not an error, %s", "now let's code!");
 
+	 struct sockaddr_in6 addr;
+	 const char *ret = real_address(listen_ip, &addr);
+	 if (ret) {
+		fprintf(stderr, "Could not resolve hostname %s: %s\n", listen_ip, ret);
+		return EXIT_FAILURE;
+	 }
     // Now let's code!
     return EXIT_SUCCESS;
 }
