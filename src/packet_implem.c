@@ -58,7 +58,7 @@ uLong compute_crc(Bytef* buf, size_t sz){
 
 pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 {
-	uint8_t* ret = (uint8_t*) malloc(10*sizeof(uint8_t));
+	uint8_t* ret = (uint8_t*) malloc(6*sizeof(uint8_t));
 	if(ret==NULL) return E_NOMEM;
 
 	pkt_t* pkt_tmp = pkt_new();
@@ -68,17 +68,15 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 
 	// Set common struct fields to check for errors in the header
 	ret[0] = pkt_set_type(pkt_tmp, pkt_tmp->type);
-	ret[1] = pkt_set_tr(pkt_tmp, pkt_tmp->tr);
+	ret[1] = pkt_set_tr(pkt_tmp, pkt_tmp->tr); // Not necessary, but left for clarity
 	ret[2] = pkt_set_window(pkt_tmp, pkt_tmp->window);
+	uint16_t offset = 0;
 	if(pkt_tmp->type == 1) {
-		ret[3] = pkt_set_seqnum(pkt_tmp, *(data+3));
-		ret[4] = pkt_set_timestamp(pkt_tmp,*(uint32_t*)(data+4));
-		ret[5] = pkt_set_crc1(pkt_tmp, ntohl(*(uint32_t*)(data+8)));
-	}else{
-		ret[3] = pkt_set_seqnum(pkt_tmp, *(data+1));
-		ret[4] = pkt_set_timestamp(pkt_tmp,*(uint32_t*)(data+2));
-		ret[5] = pkt_set_crc1(pkt_tmp, ntohl(*(uint32_t*)(data+6)));
+		offset = 2;
 	}
+	ret[3] = pkt_set_seqnum(pkt_tmp, *(data+1+offset));
+	ret[4] = pkt_set_timestamp(pkt_tmp,*(uint32_t*)(data+2+offset));
+	ret[5] = pkt_set_crc1(pkt_tmp, ntohl(*(uint32_t*)(data+6+offset)));
 	
 	// If there are errors, return the first one encountered
 	check_errors(ret, 6);
@@ -91,14 +89,12 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	pkt_tmp->tr = 0;
 	uint16_t total;
 	if(pkt_tmp->type == 1) {
-		// PTYPE est égal à PTYPE_DATA
 		crc = compute_crc((Bytef*)pkt_tmp, 8);
 		// Set length to the right endianness
 		ret[0] = pkt_set_length(pkt_tmp, ntohs(pkt_tmp->length));
 		if(ret[0]) return ret[0];
 		total = !old_tr ? 12 + pkt_tmp->length + 4 : 12;
 	}else{
-		// PTYPE est égal à PTYPE_ACK ou PTYPE_NACK
 		total = 10;
 		Bytef header[6];
 		memcpy(header, pkt_tmp, 1);
@@ -123,7 +119,7 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	
 	if(pkt_tmp->type==1 && !old_tr){
 		// Setting the payload and the crc, adding the corresponding offset based on the data pointer
-		uint16_t offset = 12;
+		offset = 12;
 		ret[0] = pkt_set_payload(pkt_tmp, data+offset, pkt_tmp->length);
 		offset += pkt_tmp->length;
 		ret[1] = pkt_set_crc2(pkt_tmp, ntohl(*(uint32_t*)(data+offset)));
@@ -301,7 +297,7 @@ ssize_t predict_header_length(const pkt_t *pkt)
 	}
 }
 	
-/**int main(int argc, char* argv[]){
+/*int main(int argc, char* argv[]){
 
 	printf("%d - %s\n", argc, argv[1]);
 	pkt_t* pkt = pkt_new();
