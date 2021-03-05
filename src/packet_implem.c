@@ -301,10 +301,10 @@ ssize_t predict_header_length(const pkt_t *pkt)
 	}
 }
 	
-int main(int argc, char* argv[]){
+/**int main(int argc, char* argv[]){
 
 	printf("%d - %s\n", argc, argv[1]);
-	/*pkt_t* pkt = pkt_new();
+	pkt_t* pkt = pkt_new();
 	pkt->window = 28;
 	pkt->type = 1;
 	pkt->tr = 0;
@@ -319,11 +319,11 @@ int main(int argc, char* argv[]){
 	printf("\n");
 	pkt_t* pkt_d = pkt_new();
 	p = pkt_decode(buffer, len, pkt_d);
-	//printf("Decode %d\n", p);*/
+	printf("Decode %d\n", p);
 	char data[1];
 	data[0] = 0b00011101;
 	printf("data[0]=%d\n", data[0]);
 	data[0] = *(uint8_t*)data & (uint8_t)0xFB;
 	printf("data[0]=%d\n", data[0]);
 	return EXIT_SUCCESS;
-}
+}*/

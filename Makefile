@@ -10,8 +10,8 @@ CFLAGS += -D_COLOR
 LDFLAGS += -lz
 
 # Adapt these as you want to fit with your project
-SENDER_SOURCES = $(wildcard src/sender.c src/log.c src/socket_helpers.c)
-RECEIVER_SOURCES = $(wildcard src/receiver.c src/log.c src/socket_helpers.c)
+SENDER_SOURCES = $(wildcard src/sender.c src/log.c src/socket_helpers.c packet_implem.c)
+RECEIVER_SOURCES = $(wildcard src/receiver.c src/log.c src/socket_helpers.c src/packet_implem.c)
 PACKET_SOURCES = $(wildcard src/packet_implem.c)
 
 SENDER_OBJECTS = $(SENDER_SOURCES:.c=.o)
@@ -22,7 +22,7 @@ SENDER = sender
 RECEIVER = receiver
 PACKET = packet
 
-all: $(SENDER) $(RECEIVER)
+all: clear $(SENDER) $(RECEIVER)
 
 $(SENDER): $(SENDER_OBJECTS)
 	$(CC) $(SENDER_OBJECTS) -o $@ $(LDFLAGS)
@@ -38,11 +38,16 @@ $(PACKET): $(PACKET_OBJECTS)
 
 .PHONY: clean mrproper
 
+clear: 
+	clear
+
 clean:
 	rm -f $(SENDER_OBJECTS) $(RECEIVER_OBJECTS) $(PACKET_OBJECTS)
 
 mrproper:
 	rm -f $(SENDER) $(RECEIVER) $(PACKET)
+
+cm: clean mrproper
 
 # It is likely that you will need to update this
 tests: all
