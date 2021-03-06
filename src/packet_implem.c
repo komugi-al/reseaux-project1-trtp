@@ -58,8 +58,7 @@ uLong compute_crc(Bytef* buf, size_t sz){
 
 pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 {
-	uint8_t* ret = (uint8_t*) malloc(6*sizeof(uint8_t));
-	if(ret==NULL) return E_NOMEM;
+	uint8_t ret[6];
 
 	pkt_t* pkt_tmp = pkt_new();
 	memcpy(pkt_tmp, (pkt_t*) data, sizeof(pkt_t));
@@ -95,11 +94,11 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 		if(ret[0]) return ret[0];
 		total = !old_tr ? 12 + pkt_tmp->length + 4 : 12;
 	}else{
-		total = 10;
 		Bytef header[6];
 		memcpy(header, pkt_tmp, 1);
 		memcpy(header+1, &pkt_tmp->seqnum, 5);
 		crc = compute_crc(header, 6);
+		total = 10;
 	}
 
 	// Check if the given length is consistent
@@ -296,7 +295,7 @@ ssize_t predict_header_length(const pkt_t *pkt)
 		return 6;
 	}
 }
-	
+
 /*int main(int argc, char* argv[]){
 
 	printf("%d - %s\n", argc, argv[1]);
@@ -323,3 +322,4 @@ ssize_t predict_header_length(const pkt_t *pkt)
 	printf("data[0]=%d\n", data[0]);
 	return EXIT_SUCCESS;
 }*/
+

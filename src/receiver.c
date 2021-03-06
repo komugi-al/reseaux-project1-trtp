@@ -12,6 +12,9 @@ int print_usage(char *prog_name) {
 	return EXIT_FAILURE;
 }
 
+const char* handle_packet(char* buffer, int len){
+
+}
 void receiver_handler(const int sfd){
 	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN | POLLOUT}};
 	int n_fds = 2;
@@ -28,7 +31,8 @@ void receiver_handler(const int sfd){
 				if(n_ret==-1) {
 					fprintf(stderr, "Error while reading sfd\n");
 				}
-				n_ret = write(sfd, buffer, n_ret);
+				handle_packet(buffer, n_ret);
+				//n_ret = write(sfd, buffer, n_ret);
 			}
 			fflush(NULL);
 		}
