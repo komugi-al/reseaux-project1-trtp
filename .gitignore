@@ -1,5 +1,3 @@
 *.o
-src/*.o
-*.swap
-scr/*.swp
+*.swp
 
