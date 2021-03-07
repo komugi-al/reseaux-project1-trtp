@@ -8,6 +8,18 @@
 /* Raccourci pour struct pkt */
 typedef struct pkt pkt_t;
 
+struct __attribute__((__packed__)) pkt {
+	uint8_t window:5;
+	uint8_t tr:1;
+	uint8_t type:2;
+	uint16_t length;
+	uint8_t seqnum;
+	unsigned int timestamp;
+	unsigned int crc1;
+	char* payload;
+	unsigned int crc2;
+};
+
 /* Types de paquets */
 typedef enum {
     PTYPE_DATA = 1,
@@ -33,6 +45,8 @@ typedef enum {
     E_NOHEADER,     /* Le paquet n'a pas de header (trop court) */
     E_UNCONSISTENT, /* Le paquet est incoherent */
 } pkt_status_code;
+
+const char *STATUS_CODE_STR[] = {"PKT_OK", "E_TYPE", "E_TR", "E_LENGTH", "E_CRC", "E_WINDOW", "E_SEQNUM", "E_NOMEM", "E_NOHEADER", "E_UNCONSISTENT"};
 
 /* Alloue et initialise une struct pkt
  * @return: NULL en cas d'erreur */

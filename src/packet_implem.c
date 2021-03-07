@@ -6,21 +6,6 @@
 #include <arpa/inet.h>
 #include <zlib.h>
 
-struct __attribute__((__packed__)) pkt {
-	uint8_t window:5;
-	uint8_t tr:1;
-	uint8_t type:2;
-	uint16_t length;
-	uint8_t seqnum;
-	unsigned int timestamp;
-	unsigned int crc1;
-	char* payload;
-	unsigned int crc2;
-};
-
-/* Extra code */
-/* Your code will be inserted here */
-
 pkt_t* pkt_new()
 {
 	pkt_t* pkt = (pkt_t*) malloc(sizeof(pkt_t));
@@ -45,6 +30,7 @@ void check_errors(uint8_t* errs, uint8_t len){
 	for(; i<len; i++){
 		if(errs[i]) {
 			errs[0] = errs[i];
+			fprintf(stderr, "Error: %s\n", STATUS_CODE_STR[errs[0]]);
 			return;
 		}
 	}
@@ -79,7 +65,10 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	
 	// If there are errors, return the first one encountered
 	check_errors(ret, 6);
-	if(ret[0]) return ret[0];	
+	if(ret[0]){
+	  fprintf(stderr, "Error: %s\n", STATUS_CODE_STR[ret[0]]);
+  	  return ret[0];	
+	}
 
 	// Prepare to check CRC1 as well as the size of the data received
 	uLong original_crc = (uLong) pkt_get_crc1(pkt_tmp); 
@@ -144,7 +133,6 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 pkt_status_code pkt_encode(const pkt_t* pkt, char *buf, size_t *len)
 {
 	size_t total = predict_header_length(pkt); 
-	// Potentiellement incorrect
 	total += pkt->type == 1 && !pkt->tr ? 4 + pkt->length + 4 : 4; 
 	if(total > *len) return E_NOMEM;
 	
