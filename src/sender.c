@@ -35,22 +35,18 @@ int inc_buf(int index){
 int update_packets(int recv_seqnum){
 	uint8_t min = next_seqnum;
 	uint8_t max = (next_seqnum+N) % SEQ_MAX_SIZE;
-	uint8_t idx = 0;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
 			return -1;
-		} else {
-			idx = (recv_seqnum + SEQ_MAX_SIZE) - min; // Calculate index if max < min
-		}
+		} 
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
 			return -1;
-		} else {
-			start_window = recv_seqnum - min; // Calculate index if min < max
 		}
 	}
+	return recv_seqnum % N;
 }
 
 pkt_t* read_packet(char* buffer, int len){
