@@ -20,7 +20,6 @@
 pkt_t* packets[N];
 uint8_t start_window = 0;
 uint8_t next_seqnum = 0;
-int buffer_size = 0; // Logical buffer size
 
 
 int print_usage(char *prog_name) {
@@ -68,8 +67,7 @@ pkt_t* create_and_save_packet_data(char* buffer, int len, int fd){
 	pkt_set_timestamp(new_pkt, second);
 	pkt_set_payload(new_pkt, buffer, len);
 
-	buffer_size++;
-	packets[buffer_size++] = new_pkt;
+	packets[next_seqnum % N] = new_pkt;
 
 	return new_pkt;
 }
@@ -111,8 +109,12 @@ void sender_handler(const int sfd, int fd){
 						pkt = read_packet(buffer, n_read); 
 						rwindow = pkt->window;
 						if(pkt->type == PTYPE_ACK) {
-							if(update_packets(pkt->seqnum) != -1){
-							//faire qq chose
+							int idx = update_packets(pkt->seqnum);
+							if(idx != -1){
+								while(start_window <= idx){
+									pkt_del(packets[start_window]);
+									start_window++;
+								}	
 							}								
 						}
 							

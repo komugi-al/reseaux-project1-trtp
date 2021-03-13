@@ -42,17 +42,16 @@ int handle_packet(char* buffer, int length){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
 			return 2;
-		} else {
-			idx = (recv_seqnum + SEQ_MAX_SIZE) - min; // Calculate index if max < min
 		}
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
 			return 2;
-		} else {
-			idx = recv_seqnum - min; // Calculate index if min < max
 		}
 	}
+	//idx = (recv_seqnum + SEQ_MAX_SIZE) - min; // Calculate index if max < min
+	
+	idx = recv_seqnum % N;
 	
 	/* End of data transmission */
 	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
@@ -86,7 +85,7 @@ int handle_packet(char* buffer, int length){
 				data[idx] = NULL;
 				window_size++;
 				next_seqnum = (next_seqnum + 1) % SEQ_MAX_SIZE;
-				idx = (idx + 1) % 32;
+				idx = (idx + 1) % N;
 			}
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		}	
