@@ -16,6 +16,7 @@ pkt_t *data[N];
 uint8_t window_size = N; // Logical size
 uint32_t pkt_last_timestamp;
 uint8_t next_seqnum;
+uint8_t idx = 0; // Index of the seqnum in my buffer
 
 int print_usage(char *prog_name) {
 	ERROR("Usage:\n\t%s [-s stats_filename] listen_ip listen_port", prog_name);
@@ -36,8 +37,7 @@ int handle_packet(char* buffer, int length){
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
 	
 	uint8_t min = next_seqnum;
-	uint8_t max = next_seqnum+N % SEQ_MAX_SIZE;
-	uint8_t idx = 0; // Index of the seqnum in my buffer
+	uint8_t max = (next_seqnum+N) % SEQ_MAX_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
@@ -85,9 +85,9 @@ int handle_packet(char* buffer, int length){
 				pkt_del(data[idx]);
 				data[idx] = NULL;
 				window_size++;
-				idx = idx + 1;
+				next_seqnum = (next_seqnum + 1) % SEQ_MAX_SIZE;
+				idx = (idx + 1) % 32;
 			}
-			next_seqnum = next_seqnum + idx % SEQ_MAX_SIZE;
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		}	
 	}
