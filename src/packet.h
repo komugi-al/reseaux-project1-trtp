@@ -46,8 +46,6 @@ typedef enum {
     E_UNCONSISTENT, /* Le paquet est incoherent */
 } pkt_status_code;
 
-const char *STATUS_CODE_STR[] = {"PKT_OK", "E_TYPE", "E_TR", "E_LENGTH", "E_CRC", "E_WINDOW", "E_SEQNUM", "E_NOMEM", "E_NOHEADER", "E_UNCONSISTENT"};
-
 /* Alloue et initialise une struct pkt
  * @return: NULL en cas d'erreur */
 pkt_t* pkt_new();

@@ -4,35 +4,119 @@
 #include <stdint.h>
 
 #include "log.h"
-#include "packet_interface.h"
+#include "packet.h"
 #include "socket_helpers.h"
+
+#define N 32
+#define RESP_LEN 10
+#define SEQ_MAX_SIZE 256
+#define PKT_MAX_SIZE 12+MAX_PAYLOAD_SIZE+4
+
+pkt_t *data[N];
+uint8_t window_size = N; // Logical size
+uint32_t pkt_last_timestamp;
+uint8_t next_seqnum;
 
 int print_usage(char *prog_name) {
 	ERROR("Usage:\n\t%s [-s stats_filename] listen_ip listen_port", prog_name);
 	return EXIT_FAILURE;
 }
 
-const char* handle_packet(char* buffer, int len){
+/* Handle a packet
+ * @return: 0 when all data has been received, 1 when a packet can be send back, 2 when the packet had to be ignored
+ */
+int handle_packet(char* buffer, int length){
+	/* Initialisation of received packet */
+	pkt_t* recv_pkt = pkt_new();
+	pkt_status_code ret = pkt_decode(buffer, length, recv_pkt);
+	/* If there was any errors during packet decoding, ignore it */
+	if(ret) return 2;
+	
+	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
+	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
+	
+	uint8_t min = next_seqnum;
+	uint8_t max = next_seqnum+N % SEQ_MAX_SIZE;
+	uint8_t idx = 0; // Index of the seqnum in my buffer
+	if(max < min){
+		if(recv_seqnum < min && recv_seqnum >= max){
+			fprintf(stderr, "Unexpected seqnum\n");
+			return 2;
+		} else {
+			idx = (recv_seqnum + SEQ_MAX_SIZE) - min; // Calculate index if max < min
+		}
+	}else{
+		if(recv_seqnum < min || recv_seqnum >= max){
+			fprintf(stderr, "Unexpected seqnum\n");
+			return 2;
+		} else {
+			idx = recv_seqnum - min; // Calculate index if min < max
+		}
+	}
+	
+	/* End of data transmission */
+	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
+		return 0;
+	}
 
+	/* Response packet to send back */
+	pkt_t* resp_pkt = pkt_new();
+	char resp_buffer[RESP_LEN];
+
+	/* Send NACK */
+	if(pkt_get_tr(recv_pkt)) {
+		//paquet tronqué -> PTYPE_NACK
+		pkt_set_type(resp_pkt, 0b11);
+		pkt_set_seqnum(resp_pkt, recv_seqnum);
+	} else {
+		pkt_set_type(resp_pkt, 0b10);
+		/* Add the packet to the buffer */
+		data[idx] = recv_pkt;
+		window_size--;
+		/* The received seqnum is not equal to the expected seqnum */
+		if(recv_seqnum != next_seqnum && data[0] == NULL){
+			pkt_set_seqnum(resp_pkt, next_seqnum);
+		} else {
+			/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
+			int ret;
+			while(data[idx] != NULL && idx < N){
+				ret = write(1, data[idx]->payload, pkt_get_length(data[idx]));
+				if(ret == -1) fprintf(stderr, "Error while writing packet to stdout\n");
+				pkt_del(data[idx]);
+				data[idx] = NULL;
+				window_size++;
+				idx = idx + 1;
+			}
+			next_seqnum = next_seqnum + idx % SEQ_MAX_SIZE;
+			pkt_set_seqnum(resp_pkt, next_seqnum);
+		}	
+	}
+	size_t enco_len = RESP_LEN;
+	pkt_set_window(resp_pkt, window_size);
+	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
+	pkt_encode(resp_pkt, resp_buffer, &enco_len);
+
+	return 1;
 }
+
 void receiver_handler(const int sfd){
-	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN | POLLOUT}};
-	int n_fds = 2;
-	int ret;
+	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN}};
+	int n_fds = 1;
+	int ret = 1;
 	int n_ret;
-	while(1){
-		ret = poll(fds, n_fds, -1);
-		if(ret == -1) fprintf(stderr, "error with poll()");
+	while(ret){
+		if(poll(fds, n_fds, -1) == -1) fprintf(stderr, "error with poll()");
 		else {
-			char buffer[1025];
+			char buffer[PKT_MAX_SIZE];
 			if(fds[0].revents && POLLIN){
-				n_ret = read(fds[0].fd, buffer, 1025);
-				if(n_ret==0) break;
+				n_ret = read(fds[0].fd, buffer, PKT_MAX_SIZE);
 				if(n_ret==-1) {
 					fprintf(stderr, "Error while reading sfd\n");
 				}
-				handle_packet(buffer, n_ret);
-				//n_ret = write(sfd, buffer, n_ret);
+				ret = handle_packet(buffer, n_ret);
+				if(ret==1){
+					n_ret = write(sfd, buffer, RESP_LEN);
+				}
 			}
 			fflush(NULL);
 		}
@@ -96,10 +180,17 @@ int main(int argc, char **argv) {
 		close(sfd);
 		return EXIT_FAILURE;
 	}
+
 	/* Connection establishment */
 	if(wait_for_client(sfd) < 0) {
 		fprintf(stderr, "Could not connect the socket upon receiving the first message\n");
 		return EXIT_FAILURE;   
+	}
+
+	/* Data array initialization */
+	int i=0;
+	for(;i<N;i++){
+		data[i] = NULL;
 	}
 
 	receiver_handler(sfd);

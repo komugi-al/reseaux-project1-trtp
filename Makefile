@@ -10,9 +10,9 @@ CFLAGS += -D_COLOR
 LDFLAGS += -lz
 
 # Adapt these as you want to fit with your project
-SENDER_SOURCES = $(wildcard src/sender.c src/log.c src/socket_helpers.c packet_implem.c)
-RECEIVER_SOURCES = $(wildcard src/receiver.c src/log.c src/socket_helpers.c src/packet_implem.c)
-PACKET_SOURCES = $(wildcard src/packet_implem.c)
+SENDER_SOURCES = $(wildcard src/sender.c src/log.c src/socket_helpers.c src/packet.c)
+RECEIVER_SOURCES = $(wildcard src/receiver.c src/log.c src/socket_helpers.c src/packet.c)
+PACKET_SOURCES = $(wildcard src/packet.c)
 
 SENDER_OBJECTS = $(SENDER_SOURCES:.c=.o)
 RECEIVER_OBJECTS = $(RECEIVER_SOURCES:.c=.o)

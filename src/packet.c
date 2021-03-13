@@ -1,10 +1,12 @@
-#include "packet_interface.h"
+#include "packet.h"
 
 /* Extra #includes */
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <zlib.h>
+
+const char *STATUS_CODE_STR[] = {"PKT_OK", "E_TYPE", "E_TR", "E_LENGTH", "E_CRC", "E_WINDOW", "E_SEQNUM", "E_NOMEM", "E_NOHEADER", "E_UNCONSISTENT"};
 
 pkt_t* pkt_new()
 {
