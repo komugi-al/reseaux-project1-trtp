@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -20,32 +21,34 @@
 pkt_t* packets[N];
 uint8_t start_window = 0;
 uint8_t next_seqnum = 0;
-
+uint8_t eot = false;
 
 int print_usage(char *prog_name) {
     ERROR("Usage:\n\t%s [-f filename] [-s stats_filename] receiver_ip receiver_port", prog_name);
     return EXIT_FAILURE;
 }
 
-int inc_buf(int index){
-    return (index+1) % 32;
-}
-
-int update_packets(int recv_seqnum){
+/*
+ *	Clear all packets received to a valid seqnum and update de start_window value to the next not yet received packet
+ */
+void clear_received_packets(int recv_seqnum){
 	uint8_t min = next_seqnum;
 	uint8_t max = (next_seqnum+N) % SEQ_MAX_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
-			return -1;
 		} 
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
-			return -1;
 		}
 	}
-	return recv_seqnum % N;
+	
+	int idx = recv_seqnum % N;
+	while(start_window <= idx){
+		pkt_del(packets[start_window]);
+		start_window++;
+	}	
 }
 
 pkt_t* read_packet(char* buffer, int len){
@@ -75,6 +78,9 @@ pkt_t* create_and_save_packet_data(char* buffer, int len, int fd){
 int encode_and_send_packet_data(pkt_t* pkt, int fd){
 	size_t length = MAX_PKT_SIZE;
 	char* new_buffer = (char*) malloc(length);
+	time_t second = 0;
+	time(&second);
+	pkt_set_timestamp(pkt, second);
 	pkt_status_code ret = pkt_encode(pkt, new_buffer, &length);
 	if(ret) fprintf(stderr, "Error while encoding data packet.\n");	
 
@@ -83,41 +89,51 @@ int encode_and_send_packet_data(pkt_t* pkt, int fd){
 }
 
 void sender_handler(const int sfd, int fd){
-	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fd, .events=POLLIN}};
+	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN}};
 	int n_fds = 2;
 	int ret;
 	int n_read;
 	uint8_t rwindow = 1;
 	while(1){
-		ret = poll(fds, n_fds, -1);
-		if(ret == -1) fprintf(stderr, "Error with poll()");
-		else {
+		ret = poll(fds, n_fds, 2000);
+		if(ret == -1) {
+			fprintf(stderr, "Error with poll()");
+		} else if(ret == 0){ // Timeout expired
+			int idx = start_window;
+			time_t second = 0;
+			time(&second);
+			while(difftime(packets[idx]->timestamp, second) <= 0){
+				encode_and_send_packet_data(packets[idx], sfd);
+				idx = idx + 1 % N;
+			}
+		} else {
 			char buffer[MAX_PAYLOAD_SIZE];
-			pkt_t* pkt;
+			pkt_t* pkt = pkt_new();
 			for(int i=0; i<n_fds; i++){
 				if(!fds[i].revents) continue;
 				if(fds[i].revents){
-					if(fds[i].fd==fd && rwindow != 0){
+					if(fds[i].fd==fd && rwindow != 0){ // Data from input source
 						rwindow--;
 						n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
 						fprintf(stderr,"Data read=%d, fd=%d\n", n_read, fds[i].fd);
 						pkt = create_and_save_packet_data(buffer, n_read, fd);
 						encode_and_send_packet_data(pkt, sfd);
-						if(n_read==0) break; 
-					} else if(fds[i].fd==sfd){
-						n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-						pkt = read_packet(buffer, n_read); 
-						rwindow = pkt->window;
-						if(pkt->type == PTYPE_ACK) {
-							int idx = update_packets(pkt->seqnum);
-							if(idx != -1){
-								while(start_window <= idx){
-									pkt_del(packets[start_window]);
-									start_window++;
-								}	
-							}								
+						if(n_read==0) {
+							eot = true;
 						}
-							
+					} else if(fds[i].fd==sfd){ // Data from socket
+						n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
+						if(pkt_decode(buffer, n_read, pkt) == PKT_OK){
+							rwindow = pkt->window;
+							if(pkt->type == PTYPE_ACK) {
+								/* If end of transmission, stop*/
+								if(eot && (pkt->seqnum % N) == start_window) break; 
+								clear_received_packets(pkt->seqnum);
+							}else if(pkt->type == PTYPE_NACK){
+								/* Send a packet again if there was an error */
+								encode_and_send_packet_data(packets[pkt->seqnum%N], sfd);
+							}
+						}
 					}
 					fflush(NULL);
 				} 
