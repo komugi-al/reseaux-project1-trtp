@@ -7,12 +7,12 @@
 #include "packet.h"
 #include "socket_helpers.h"
 
-#define N 32
+#define N 31
 #define RESP_LEN 10
 #define SEQ_MAX_SIZE 256
 #define PKT_MAX_SIZE 12+MAX_PAYLOAD_SIZE+4
 
-pkt_t *data[N];
+pkt_t *window[N];
 uint8_t window_size = N; // Logical size
 uint32_t pkt_last_timestamp;
 uint8_t next_seqnum;
@@ -60,29 +60,30 @@ int handle_packet(char* buffer, int length){
 
 	/* Response packet to send back */
 	pkt_t* resp_pkt = pkt_new();
-	char resp_buffer[RESP_LEN];
 
 	/* Send NACK */
 	if(pkt_get_tr(recv_pkt)) {
 		//paquet tronqué -> PTYPE_NACK
 		pkt_set_type(resp_pkt, 0b11);
 		pkt_set_seqnum(resp_pkt, recv_seqnum);
+		DEBUG("Writing NACK\n");
 	} else {
+		DEBUG("Writing ACK\n");
 		pkt_set_type(resp_pkt, 0b10);
 		/* Add the packet to the buffer */
-		data[idx] = recv_pkt;
+		window[idx] = recv_pkt;
 		window_size--;
 		/* The received seqnum is not equal to the expected seqnum */
-		if(recv_seqnum != next_seqnum && data[0] == NULL){
+		if(recv_seqnum != next_seqnum && window[0] == NULL){
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		} else {
 			/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
 			int ret;
-			while(data[idx] != NULL && idx < N){
-				ret = write(1, data[idx]->payload, pkt_get_length(data[idx]));
+			while(window[idx] != NULL && idx < N){
+				ret = write(1, window[idx]->payload, pkt_get_length(window[idx]));
 				if(ret == -1) fprintf(stderr, "Error while writing packet to stdout\n");
-				pkt_del(data[idx]);
-				data[idx] = NULL;
+				pkt_del(window[idx]);
+				window[idx] = NULL;
 				window_size++;
 				next_seqnum = (next_seqnum + 1) % SEQ_MAX_SIZE;
 				idx = (idx + 1) % N;
@@ -93,7 +94,9 @@ int handle_packet(char* buffer, int length){
 	size_t enco_len = RESP_LEN;
 	pkt_set_window(resp_pkt, window_size);
 	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
-	pkt_encode(resp_pkt, resp_buffer, &enco_len);
+	pkt_encode(resp_pkt, buffer, &enco_len);
+	
+	DEBUG("window_size: %d\n", resp_pkt->window);
 
 	return 1;
 }
@@ -106,6 +109,7 @@ void receiver_handler(const int sfd){
 	while(ret){
 		if(poll(fds, n_fds, -1) == -1) fprintf(stderr, "error with poll()");
 		else {
+			DEBUG("Exiting poll(), fd avail.\n");
 			char buffer[PKT_MAX_SIZE];
 			if(fds[0].revents && POLLIN){
 				n_ret = read(fds[0].fd, buffer, PKT_MAX_SIZE);
@@ -114,6 +118,7 @@ void receiver_handler(const int sfd){
 				}
 				ret = handle_packet(buffer, n_ret);
 				if(ret==1){
+					DEBUG("Writing ACK to socket\n");
 					n_ret = write(sfd, buffer, RESP_LEN);
 				}
 			}
@@ -189,7 +194,7 @@ int main(int argc, char **argv) {
 	/* Data array initialization */
 	int i=0;
 	for(;i<N;i++){
-		data[i] = NULL;
+		window[i] = NULL;
 	}
 
 	receiver_handler(sfd);

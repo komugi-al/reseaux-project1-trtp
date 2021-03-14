@@ -14,12 +14,13 @@
 #include "socket_helpers.h"
 #include "packet.h"
 
-#define N 32
-#define SEQ_MAX_SIZE 256
+#define N 31
+#define MAX_SEQ_SIZE 256
 #define MAX_PKT_SIZE 12+MAX_PAYLOAD_SIZE+4
 
 pkt_t* packets[N];
 uint8_t start_window = 0;
+uint8_t next_idx = 0;
 uint8_t next_seqnum = 0;
 uint8_t eot = false;
 
@@ -33,32 +34,43 @@ int print_usage(char *prog_name) {
  */
 void clear_received_packets(int recv_seqnum){
 	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+N) % SEQ_MAX_SIZE;
+	uint8_t max = (next_seqnum+N) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
+			return;
 		} 
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			fprintf(stderr, "Unexpected seqnum\n");
-		}
+			return;
+		} 
 	}
 	
-	int idx = recv_seqnum % N;
-	while(start_window <= idx){
+	DEBUG("start_window: %d, recv_seqnum: %d, packets[x] == NULL: %d\n", start_window, recv_seqnum, packets[start_window]==NULL);
+	uint8_t total = 0;
+	uint8_t first_pkt = packets[start_window]->seqnum;
+	if(recv_seqnum < first_pkt){
+		total = recv_seqnum + MAX_SEQ_SIZE - first_pkt;
+	} else {
+		total = recv_seqnum - first_pkt;
+	}
+
+	DEBUG("clear_received_packets(): beginning clearing\n");
+	int idx = 0;
+	while(idx < total){
+		DEBUG("start_window: %d, recv_seqnum: %d, packets[x] == NULL: %d\n", start_window, recv_seqnum, packets[start_window]==NULL);
 		pkt_del(packets[start_window]);
-		start_window++;
+		packets[start_window] = NULL;
+		start_window = (start_window + 1) % N;
+		idx++;
 	}	
-}
-
-pkt_t* read_packet(char* buffer, int len){
-
 }
 
 /* 
  * Create and send a new data packet over the socket
  */
-pkt_t* create_and_save_packet_data(char* buffer, int len, int fd){
+pkt_t* create_and_save_packet_data(char* buffer, int len){
 	// Maybe checking return values of setters would be a good idea
 	// Create a new packet and set corresponding fields
 	pkt_t* new_pkt = pkt_new();
@@ -70,8 +82,10 @@ pkt_t* create_and_save_packet_data(char* buffer, int len, int fd){
 	pkt_set_timestamp(new_pkt, second);
 	pkt_set_payload(new_pkt, buffer, len);
 
-	packets[next_seqnum % N] = new_pkt;
+	packets[next_idx] = new_pkt;
 
+	next_idx = (next_idx + 1) % N;
+	
 	return new_pkt;
 }
 
@@ -89,47 +103,52 @@ int encode_and_send_packet_data(pkt_t* pkt, int fd){
 }
 
 void sender_handler(const int sfd, int fd){
-	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN}};
+	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fd, .events=POLLIN}};
 	int n_fds = 2;
 	int ret;
 	int n_read;
 	uint8_t rwindow = 1;
 	while(1){
+		int idx = start_window;
+		time_t second = 0;
+		time(&second);
+		while(packets[idx] != NULL && idx < next_idx){
+			if(difftime(packets[idx]->timestamp, second-2000) <= 0){
+				encode_and_send_packet_data(packets[idx], sfd);
+			}
+			idx = idx + 1 % N;
+		}
+
 		ret = poll(fds, n_fds, 2000);
 		if(ret == -1) {
 			fprintf(stderr, "Error with poll()");
-		} else if(ret == 0){ // Timeout expired
-			int idx = start_window;
-			time_t second = 0;
-			time(&second);
-			while(difftime(packets[idx]->timestamp, second) <= 0){
-				encode_and_send_packet_data(packets[idx], sfd);
-				idx = idx + 1 % N;
-			}
 		} else {
 			char buffer[MAX_PAYLOAD_SIZE];
 			pkt_t* pkt = pkt_new();
 			for(int i=0; i<n_fds; i++){
 				if(!fds[i].revents) continue;
 				if(fds[i].revents){
-					if(fds[i].fd==fd && rwindow != 0){ // Data from input source
+					if(fds[i].fd==fd && rwindow != 0){
 						rwindow--;
 						n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-						fprintf(stderr,"Data read=%d, fd=%d\n", n_read, fds[i].fd);
-						pkt = create_and_save_packet_data(buffer, n_read, fd);
+						pkt = create_and_save_packet_data(buffer, n_read);
 						encode_and_send_packet_data(pkt, sfd);
 						if(n_read==0) {
 							eot = true;
 						}
 					} else if(fds[i].fd==sfd){ // Data from socket
 						n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-						if(pkt_decode(buffer, n_read, pkt) == PKT_OK){
+						int ret = pkt_decode(buffer, n_read, pkt);
+						if(ret == PKT_OK){
 							rwindow = pkt->window;
 							if(pkt->type == PTYPE_ACK) {
+								DEBUG("pkt->type is PTYPE_ACK, window: %d\n", pkt->window);
 								/* If end of transmission, stop*/
 								if(eot && (pkt->seqnum % N) == start_window) break; 
 								clear_received_packets(pkt->seqnum);
+								DEBUG("clear_received_packets() done\n");
 							}else if(pkt->type == PTYPE_NACK){
+								DEBUG("pkt->type is PTYPE_NACK\n");
 								/* Send a packet again if there was an error */
 								encode_and_send_packet_data(packets[pkt->seqnum%N], sfd);
 							}
@@ -199,7 +218,14 @@ int main(int argc, char **argv) {
    // Create the socket to connect with receiver
 	struct sockaddr_in6 addr;
 	const char *err = real_address(receiver_ip, &addr);
+	if(err) {
+		fprintf(stderr, "Could not resolve hostname %s: %s\n", receiver_ip, err);
+		return EXIT_FAILURE;
+	}
    int sfd = create_socket(NULL, -1, &addr, receiver_port);
+
+	memset(packets, 0, sizeof(packets));
+
 
    /* Process I/O */
 	sender_handler(sfd, fd);

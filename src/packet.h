@@ -5,6 +5,24 @@
 #include <stdint.h> /* uintx_t */
 #include <stdio.h>  /* ssize_t */
 
+/* Raccourci pour struct stat */
+typedef struct pkt_stat stat_t;
+
+struct pkt_stat {
+	int data_sent;
+	int data_received;
+	int data_truncated_received;
+	int ack_sent;
+	int ack_received;
+	int nack_sent;
+	int nack_received;
+	int packet_ignored;
+	int min_rtt;
+	int max_rtt;
+	int packet_retransmitted;
+	int packet_duplicated;
+};
+
 /* Raccourci pour struct pkt */
 typedef struct pkt pkt_t;
 
