@@ -69,32 +69,3 @@ int wait_for_client(int sfd){
 	return 0;
 }
 
-void read_write_loop(const int sfd){
-	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=0, .events=POLLIN}};
-	int n_fds = 2;
-	int ret;
-	int n_ret;
-	while(1){
-		ret = poll(fds, n_fds, -1);
-		if(ret == -1) fprintf(stderr, "error with poll()");
-		else {
-			char buffer[1025];
-			for(int i=0; i<n_fds; i++){
-				if(!fds[i].revents) continue;
-
-				if(fds[i].revents){
-					n_ret = read(fds[i].fd, buffer, 1025);
-					fprintf(stderr,"Data read=%d, fd=%d\n", n_ret, fds[i].fd);
-					if(n_ret==0) break;
-					if(fds[i].fd==0){
-						n_ret = write(sfd, buffer, n_ret);
-					} else if(fds[i].fd==sfd){
-						n_ret = write(1, buffer, n_ret);
-					}
-					fflush(NULL);
-				} 
-			}
-		}
-	}
-}
-

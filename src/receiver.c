@@ -6,14 +6,12 @@
 #include "log.h"
 #include "packet.h"
 #include "socket_helpers.h"
+#include "config.h"
 
-#define N 31
 #define RESP_LEN 10
-#define SEQ_MAX_SIZE 256
-#define PKT_MAX_SIZE 12+MAX_PAYLOAD_SIZE+4
 
 pkt_t *window[N];
-uint8_t window_size = N; // Logical size
+uint8_t window_size = 31; // Logical size
 uint32_t pkt_last_timestamp;
 uint8_t next_seqnum;
 uint8_t idx = 0; // Index of the seqnum in my buffer
@@ -32,24 +30,24 @@ int handle_packet(char* buffer, int length){
 	pkt_status_code ret = pkt_decode(buffer, length, recv_pkt);
 	/* If there was any errors during packet decoding, ignore it */
 	if(ret) return 2;
+
 	
 	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
 	
 	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+N) % SEQ_MAX_SIZE;
+	uint8_t max = (next_seqnum+N) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
-			fprintf(stderr, "Unexpected seqnum\n");
+			ERROR("Unexpected seqnum\n");
 			return 2;
 		}
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
-			fprintf(stderr, "Unexpected seqnum\n");
+			ERROR("Unexpected seqnum\n");
 			return 2;
 		}
 	}
-	//idx = (recv_seqnum + SEQ_MAX_SIZE) - min; // Calculate index if max < min
 	
 	idx = recv_seqnum % N;
 	
@@ -64,9 +62,9 @@ int handle_packet(char* buffer, int length){
 	/* Send NACK */
 	if(pkt_get_tr(recv_pkt)) {
 		//paquet tronqué -> PTYPE_NACK
+		DEBUG("Writing NACK\n");
 		pkt_set_type(resp_pkt, 0b11);
 		pkt_set_seqnum(resp_pkt, recv_seqnum);
-		DEBUG("Writing NACK\n");
 	} else {
 		DEBUG("Writing ACK\n");
 		pkt_set_type(resp_pkt, 0b10);
@@ -81,22 +79,23 @@ int handle_packet(char* buffer, int length){
 			int ret;
 			while(window[idx] != NULL && idx < N){
 				ret = write(1, window[idx]->payload, pkt_get_length(window[idx]));
-				if(ret == -1) fprintf(stderr, "Error while writing packet to stdout\n");
+				if(ret == -1) ERROR("Error while writing packet to stdout\n");
 				pkt_del(window[idx]);
 				window[idx] = NULL;
 				window_size++;
-				next_seqnum = (next_seqnum + 1) % SEQ_MAX_SIZE;
+				next_seqnum = (next_seqnum + 1) % MAX_SEQ_SIZE;
 				idx = (idx + 1) % N;
 			}
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		}	
 	}
+
 	size_t enco_len = RESP_LEN;
 	pkt_set_window(resp_pkt, window_size);
 	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
 	pkt_encode(resp_pkt, buffer, &enco_len);
 	
-	DEBUG("window_size: %d\n", resp_pkt->window);
+	DEBUG("window_size: %d, next_seqnum: %d\n", resp_pkt->window, resp_pkt->seqnum);
 
 	return 1;
 }
@@ -107,23 +106,24 @@ void receiver_handler(const int sfd){
 	int ret = 1;
 	int n_ret;
 	while(ret){
-		if(poll(fds, n_fds, -1) == -1) fprintf(stderr, "error with poll()");
-		else {
-			DEBUG("Exiting poll(), fd avail.\n");
-			char buffer[PKT_MAX_SIZE];
+		if(poll(fds, n_fds, -1) == -1){
+			ERROR("Error with poll()");
+		} else {
+			char buffer[MAX_PKT_SIZE];
 			if(fds[0].revents && POLLIN){
-				n_ret = read(fds[0].fd, buffer, PKT_MAX_SIZE);
+				n_ret = read(fds[0].fd, buffer, MAX_PKT_SIZE);
 				if(n_ret==-1) {
-					fprintf(stderr, "Error while reading sfd\n");
+					ERROR("Error while reading sfd\n");
 				}
 				ret = handle_packet(buffer, n_ret);
 				if(ret==1){
-					DEBUG("Writing ACK to socket\n");
+					DEBUG("Writing response to socket\n");
 					n_ret = write(sfd, buffer, RESP_LEN);
 				}
 			}
 			fflush(NULL);
 		}
+		DEBUG("ret %d\n", ret);
 	}
 }
 
