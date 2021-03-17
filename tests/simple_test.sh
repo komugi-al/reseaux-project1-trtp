@@ -17,6 +17,7 @@ fi
 $valgrind ./receiver -f received_file :: 2456  2> receiver.log &
 receiver_pid=$!
 
+
 cleanup()
 {
     kill -9 $receiver_pid

@@ -27,9 +27,9 @@ int print_usage(char *prog_name) {
 int handle_packet(char* buffer, int length){
 	/* Initialisation of received packet */
 	pkt_t* recv_pkt = pkt_new();
-	pkt_status_code ret = pkt_decode(buffer, length, recv_pkt);
+	int ret = 1;
 	/* If there was any errors during packet decoding, ignore it */
-	if(ret) return 2;
+	if(pkt_decode(buffer, length, recv_pkt)) return 2;
 
 	
 	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
@@ -48,14 +48,14 @@ int handle_packet(char* buffer, int length){
 			return 2;
 		}
 	}
+
+	/* End of data transmission */
+	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
+		ret = 0;
+	}
 	
 	idx = recv_seqnum % N;
 	
-	/* End of data transmission */
-	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
-		return 0;
-	}
-
 	/* Response packet to send back */
 	pkt_t* resp_pkt = pkt_new();
 
@@ -76,10 +76,10 @@ int handle_packet(char* buffer, int length){
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		} else {
 			/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
-			int ret;
+			int n_wri;
 			while(window[idx] != NULL && idx < N){
-				ret = write(1, window[idx]->payload, pkt_get_length(window[idx]));
-				if(ret == -1) ERROR("Error while writing packet to stdout\n");
+				n_wri = write(1, window[idx]->payload, pkt_get_length(window[idx]));
+				if(n_wri == -1) ERROR("Error while writing packet to stdout\n");
 				pkt_del(window[idx]);
 				window[idx] = NULL;
 				window_size++;
@@ -95,9 +95,10 @@ int handle_packet(char* buffer, int length){
 	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
 	pkt_encode(resp_pkt, buffer, &enco_len);
 	
-	DEBUG("window_size: %d, next_seqnum: %d\n", resp_pkt->window, resp_pkt->seqnum);
+	DEBUG("window_size: %d, next_seqnum: %d, pkt->type %d\n", resp_pkt->window, resp_pkt->seqnum, resp_pkt->type);
 
-	return 1;
+
+	return ret;
 }
 
 void receiver_handler(const int sfd){
@@ -116,7 +117,7 @@ void receiver_handler(const int sfd){
 					ERROR("Error while reading sfd\n");
 				}
 				ret = handle_packet(buffer, n_ret);
-				if(ret==1){
+				if(ret>=0){
 					DEBUG("Writing response to socket\n");
 					n_ret = write(sfd, buffer, RESP_LEN);
 				}

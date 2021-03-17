@@ -18,7 +18,7 @@
 pkt_t* windows[N];
 uint8_t start_window = 0;
 uint8_t next_seqnum = 0;
-uint8_t eot = false;
+bool eot = false;
 
 int print_usage(char *prog_name) {
     ERROR("Usage:\n\t%s [-f filename] [-s stats_filename] receiver_ip receiver_port", prog_name);
@@ -29,8 +29,8 @@ int print_usage(char *prog_name) {
  *	Clear all packets received to a valid seqnum and update de start_window value to the next not yet received packet
  */
 void clear_received_packets(int recv_seqnum){
-	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+N) % MAX_SEQ_SIZE;
+	uint8_t min = start_window;
+	uint8_t max = (start_window+N) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			ERROR("Unexpected seqnum\n");
@@ -42,7 +42,6 @@ void clear_received_packets(int recv_seqnum){
 	}
 	
 		
-	DEBUG("clear_received_packets(): beginning clearing\n");
 	int idx = recv_seqnum % N;
 	while(start_window != idx){
 		DEBUG("start_window: %d, recv_seqnum: %d, windows[x] == NULL: %d\n", start_window, recv_seqnum, windows[start_window]==NULL);
@@ -110,9 +109,10 @@ void sender_handler(const int sfd, int fd){
 	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fd, .events=POLLIN}};
 	int n_fds = 2;
 	int ret;
-	int n_read;
+	int n_read = 0;
 	uint8_t rwindow = 1;
-	while(1){
+	uint8_t end = false;
+	while(!end && n_read != -1){
 		
 		resend_timedout_packet(sfd);
 
@@ -126,34 +126,38 @@ void sender_handler(const int sfd, int fd){
 
 				if(!fds[i].revents) continue;
 
-				if(fds[i].fd==fd && rwindow != 0){
+				if(fds[i].fd==fd && rwindow != 0 && !eot){
 					rwindow--;
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
 					pkt = create_and_save_packet_data(buffer, n_read);
 					encode_and_send_packet_data(pkt, sfd);
+
 					if(n_read==0) {
 						DEBUG("EOF\n");
 						eot = true;
 					}
 				} else if(fds[i].fd==sfd) { // Data from socket (ACK & NACK)
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-					ret = pkt_decode(buffer, n_read, pkt);
-					if(ret) {
-						ERROR("Error with pkt_decode()\n");
-					} else {
-						if(pkt->seqnum == next_seqnum){
-							rwindow = pkt->window;
-						}
-						if(pkt->type == PTYPE_ACK) {
-							DEBUG("pkt->type is PTYPE_ACK, window: %d\n", pkt->window);
-							/* If end of transmission, stop*/
-							if(eot && (pkt->seqnum % N) == start_window) break; 
-							clear_received_packets(pkt->seqnum);
-							DEBUG("clear_received_packets() done\n");
-						}else if(pkt->type == PTYPE_NACK){
-							DEBUG("pkt->type is PTYPE_NACK\n");
-							/* Send a packet again if there was an error */
-							encode_and_send_packet_data(windows[pkt->seqnum%N], sfd);
+					DEBUG("n_read %d, sfd %d\n", n_read, sfd);
+					if(n_read >= 0){
+						ret = pkt_decode(buffer, n_read, pkt);
+						if(ret) {
+							ERROR("Error with pkt_decode() %d read %d\n", ret, n_read);
+						} else {
+							if(pkt->seqnum == next_seqnum){
+								rwindow = pkt->window;
+							}
+							if(pkt->type == PTYPE_ACK) {
+								DEBUG("pkt->type is PTYPE_ACK\n");
+								/* If end of transmission, stop*/
+								if(eot && (pkt->seqnum == next_seqnum)) end = true; 
+								DEBUG("pkt->seqnum %d, next_seqnum %d\n", pkt->seqnum, next_seqnum);
+								clear_received_packets(pkt->seqnum);
+							}else if(pkt->type == PTYPE_NACK){
+								DEBUG("pkt->type is PTYPE_NACK\n");
+								/* Send a packet again if there was an error */
+								encode_and_send_packet_data(windows[pkt->seqnum%N], sfd);
+							}
 						}
 					}
 				}

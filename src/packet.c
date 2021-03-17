@@ -93,6 +93,7 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	}
 
 
+	fprintf(stderr, "total %d len %lu ptype %d\n", total, len, pkt_tmp->type);
 	// Check if the given length is consistent
 	if(total != len) return E_UNCONSISTENT;
 	// Checks if packet type is PTYPE_DATA then verify consistency
