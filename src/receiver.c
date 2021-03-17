@@ -15,6 +15,7 @@ uint8_t window_size = 31; // Logical size
 uint32_t pkt_last_timestamp;
 uint8_t next_seqnum;
 uint8_t idx = 0; // Index of the seqnum in my buffer
+stat_t stats;
 
 int print_usage(char *prog_name) {
 	ERROR("Usage:\n\t%s [-s stats_filename] listen_ip listen_port", prog_name);
@@ -40,11 +41,13 @@ int handle_packet(char* buffer, int length){
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			ERROR("Unexpected seqnum\n");
+			stats.packet_ignored += 1;
 			return 2;
 		}
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			ERROR("Unexpected seqnum\n");
+			stats.packet_ignored += 1;
 			return 2;
 		}
 	}
@@ -62,13 +65,20 @@ int handle_packet(char* buffer, int length){
 	/* Send NACK */
 	if(pkt_get_tr(recv_pkt)) {
 		//paquet tronqué -> PTYPE_NACK
+		stats.data_truncated_received += 1;
+		stats.nack_sent += 1;
 		DEBUG("Writing NACK\n");
 		pkt_set_type(resp_pkt, 0b11);
 		pkt_set_seqnum(resp_pkt, recv_seqnum);
 	} else {
+		stats.data_received += 1;
+		stats.ack_sent += 1;
 		DEBUG("Writing ACK\n");
 		pkt_set_type(resp_pkt, 0b10);
 		/* Add the packet to the buffer */
+		if(window[idx] != NULL){
+			stats.packet_duplicated += 1;
+		}
 		window[idx] = recv_pkt;
 		window_size--;
 		/* The received seqnum is not equal to the expected seqnum */
@@ -131,7 +141,7 @@ void receiver_handler(const int sfd){
 
 int main(int argc, char **argv) {
 	int opt;
-
+	stats = { 0 };
 	char *stats_filename = NULL;
 	char *listen_ip = NULL;
 	char *listen_port_err;
