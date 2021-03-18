@@ -141,12 +141,12 @@ void receiver_handler(const int sfd){
 
 int main(int argc, char **argv) {
 	int opt;
-	stats = { 0 };
 	char *stats_filename = NULL;
 	char *listen_ip = NULL;
 	char *listen_port_err;
 	uint16_t listen_port;
-
+	// init stats packet
+	memset(&stats, 0, sizeof(stat_t));
 	while ((opt = getopt(argc, argv, "s:h")) != -1) {
 	  switch (opt) {
 	  case 'h':
@@ -211,6 +211,13 @@ int main(int argc, char **argv) {
 	receiver_handler(sfd);
 
 	close(sfd);
+
+	ERROR("Data received : %d\n", stats.data_received);
+	ERROR("Data truncated recieved : %d\n", stats.data_truncated_received);
+	ERROR("Ack sent : %d\n", stats.ack_sent);
+	ERROR("Nack sent : %d\n", stats.nack_sent);
+	ERROR("Ignored packets : %d\n", stats.packet_ignored);
+	ERROR("Duplicated packets : %d\n", stats.packet_duplicated);
 
 	return EXIT_SUCCESS;
 }
