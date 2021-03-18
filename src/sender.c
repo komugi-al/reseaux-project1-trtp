@@ -91,13 +91,13 @@ void encode_and_send_packet_data(pkt_t* pkt, int fd){
 	}
 }
 
-void resend_timedout_packet(int sfd){
+void resend_timedout_packet(int sfd, int timeout){
 	int idx = start_window;
 	int i = 0;
 	time_t second = 0;
 	time(&second);
 	while(windows[idx] != NULL && i < N){
-		if(difftime(windows[idx]->timestamp, second-2000) <= 0){
+		if(difftime(windows[idx]->timestamp, second-timeout) <= 0){
 			encode_and_send_packet_data(windows[idx], sfd);
 			idx = idx + 1 % N;
 		}
@@ -105,18 +105,19 @@ void resend_timedout_packet(int sfd){
 	}
 }
 
-void sender_handler(const int sfd, int fd){
-	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fd, .events=POLLIN}};
+void sender_handler(const int sfd, int fdin){
+	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fdin, .events=POLLIN}};
 	int n_fds = 2;
+	int timeout = 50;
 	int ret;
 	int n_read = 0;
 	uint8_t rwindow = 1;
 	uint8_t end = false;
 	while(!end && n_read != -1){
 		
-		resend_timedout_packet(sfd);
+		resend_timedout_packet(sfd, timeout);
 
-		ret = poll(fds, n_fds, 2000);
+		ret = poll(fds, n_fds, timeout);
 		if(ret == -1) {
 			ERROR("Error with poll()\n");
 		} else {
@@ -126,20 +127,22 @@ void sender_handler(const int sfd, int fd){
 
 				if(!fds[i].revents) continue;
 
-				if(fds[i].fd==fd && rwindow != 0 && !eot){
+				if(fds[i].fd==fdin && rwindow != 0 && !eot){
+					DEBUG("Reading from stdin\n");
 					rwindow--;
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
 					pkt = create_and_save_packet_data(buffer, n_read);
 					encode_and_send_packet_data(pkt, sfd);
 
 					if(n_read==0) {
-						DEBUG("EOF\n");
+						DEBUG("EOF received\n");
 						eot = true;
 					}
 				} else if(fds[i].fd==sfd) { // Data from socket (ACK & NACK)
+					DEBUG("Reading from socket\n");
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-					DEBUG("n_read %d, sfd %d\n", n_read, sfd);
 					if(n_read >= 0){
+						DEBUG("read() return >= 0\n");
 						ret = pkt_decode(buffer, n_read, pkt);
 						if(ret) {
 							ERROR("Error with pkt_decode() %d read %d\n", ret, n_read);

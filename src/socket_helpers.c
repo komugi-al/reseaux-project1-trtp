@@ -65,7 +65,6 @@ int wait_for_client(int sfd){
 		printf("could not connect the socket\n");
 		return -1;
 	}
-	printf("Connected\n");
 	return 0;
 }
 

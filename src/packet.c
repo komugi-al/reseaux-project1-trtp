@@ -92,8 +92,6 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 		total = 10;
 	}
 
-
-	fprintf(stderr, "total %d len %lu ptype %d\n", total, len, pkt_tmp->type);
 	// Check if the given length is consistent
 	if(total != len) return E_UNCONSISTENT;
 	// Checks if packet type is PTYPE_DATA then verify consistency
@@ -275,7 +273,6 @@ pkt_status_code pkt_set_payload(pkt_t *pkt,
 	pkt->payload = (char*) malloc(length*sizeof(char));
 	if(pkt->payload==NULL) return E_NOMEM;
 	memcpy(pkt->payload, data, length);
-	fprintf(stderr, "set_payload length: %d - payload: %c\n", length, *pkt->payload);
 	return PKT_OK;
 }
 

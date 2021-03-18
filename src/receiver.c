@@ -31,6 +31,7 @@ int handle_packet(char* buffer, int length){
 	/* If there was any errors during packet decoding, ignore it */
 	if(pkt_decode(buffer, length, recv_pkt)) return 2;
 
+	DEBUG("recv_pkt->length %d\n", recv_pkt->length);
 	
 	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
@@ -62,11 +63,11 @@ int handle_packet(char* buffer, int length){
 	/* Send NACK */
 	if(pkt_get_tr(recv_pkt)) {
 		//paquet tronqué -> PTYPE_NACK
-		DEBUG("Writing NACK\n");
+		DEBUG("Starting NACK\n");
 		pkt_set_type(resp_pkt, 0b11);
 		pkt_set_seqnum(resp_pkt, recv_seqnum);
 	} else {
-		DEBUG("Writing ACK\n");
+		DEBUG("Starting ACK\n");
 		pkt_set_type(resp_pkt, 0b10);
 		/* Add the packet to the buffer */
 		window[idx] = recv_pkt;
@@ -95,8 +96,7 @@ int handle_packet(char* buffer, int length){
 	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
 	pkt_encode(resp_pkt, buffer, &enco_len);
 	
-	DEBUG("window_size: %d, next_seqnum: %d, pkt->type %d\n", resp_pkt->window, resp_pkt->seqnum, resp_pkt->type);
-
+	DEBUG("window_size: %d, next_seqnum: %d\n", resp_pkt->window, resp_pkt->seqnum);
 
 	return ret;
 }
@@ -116,7 +116,9 @@ void receiver_handler(const int sfd){
 				if(n_ret==-1) {
 					ERROR("Error while reading sfd\n");
 				}
+				DEBUG("STARTING handle_packet()\n");
 				ret = handle_packet(buffer, n_ret);
+				DEBUG("handle_packet() returned %d\n", ret);
 				if(ret>=0){
 					DEBUG("Writing response to socket\n");
 					n_ret = write(sfd, buffer, RESP_LEN);
@@ -124,7 +126,6 @@ void receiver_handler(const int sfd){
 			}
 			fflush(NULL);
 		}
-		DEBUG("ret %d\n", ret);
 	}
 }
 
