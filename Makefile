@@ -2,7 +2,7 @@
 CC = gcc
 
 # Feel free to add other C flags
-CFLAGS += -c -std=gnu99 -Wall -Werror -Wextra -O2
+CFLAGS += -c -std=gnu99 -Wall -Werror -Wextra -O2 -pedantic
 # By default, we colorize the output, but this might be ugly in log files, so feel free to remove the following line.
 CFLAGS += -D_COLOR
 

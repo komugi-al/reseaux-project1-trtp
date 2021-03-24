@@ -14,7 +14,6 @@ pkt_t *window[N];
 uint8_t window_size = 31; // Logical size
 uint32_t pkt_last_timestamp;
 uint8_t next_seqnum;
-uint8_t idx = 0; // Index of the seqnum in my buffer
 stat_t stats;
 
 int print_usage(char *prog_name) {
@@ -38,7 +37,7 @@ int handle_packet(char* buffer, int length){
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
 	
 	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+N) % MAX_SEQ_SIZE;
+	uint8_t max = (next_seqnum+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			ERROR("Unexpected seqnum\n");
@@ -58,8 +57,6 @@ int handle_packet(char* buffer, int length){
 		ret = 0;
 	}
 	
-	idx = recv_seqnum % N;
-	
 	/* Response packet to send back */
 	pkt_t* resp_pkt = pkt_new();
 
@@ -69,26 +66,23 @@ int handle_packet(char* buffer, int length){
 		stats.data_truncated_received += 1;
 		stats.nack_sent += 1;
 		DEBUG("Starting NACK\n");
-		pkt_set_type(resp_pkt, 0b11);
+		pkt_set_type(resp_pkt, 3);
 		pkt_set_seqnum(resp_pkt, recv_seqnum);
 	} else {
 		stats.data_received += 1;
 		stats.ack_sent += 1;
 		DEBUG("Starting ACK\n");
-		pkt_set_type(resp_pkt, 0b10);
+		pkt_set_type(resp_pkt, 2);
+		
 		/* Add the packet to the buffer */
-		if(window[idx] != NULL){
-			stats.packet_duplicated += 1;
-		}
-		window[idx] = recv_pkt;
-		window_size--;
-		/* The received seqnum is not equal to the expected seqnum */
-		if(recv_seqnum != next_seqnum && window[0] == NULL){
-			pkt_set_seqnum(resp_pkt, next_seqnum);
-		} else {
+		if(window[recv_seqnum % N] == NULL){
+			window[recv_seqnum % N] = recv_pkt;
+			window_size--;
+		
 			/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
+			uint8_t idx = next_seqnum % N;
 			int n_wri;
-			while(window[idx] != NULL && idx < N){
+			while(window[idx] != NULL){
 				n_wri = write(1, window[idx]->payload, pkt_get_length(window[idx]));
 				if(n_wri == -1) ERROR("Error while writing packet to stdout\n");
 				pkt_del(window[idx]);
@@ -98,6 +92,8 @@ int handle_packet(char* buffer, int length){
 				idx = (idx + 1) % N;
 			}
 			pkt_set_seqnum(resp_pkt, next_seqnum);
+		}else{
+			stats.packet_duplicated += 1;
 		}	
 	}
 
@@ -129,7 +125,7 @@ void receiver_handler(const int sfd){
 				DEBUG("STARTING handle_packet()\n");
 				ret = handle_packet(buffer, n_ret);
 				DEBUG("handle_packet() returned %d\n", ret);
-				if(ret>=0){
+				if(ret!=2){
 					DEBUG("Writing response to socket\n");
 					n_ret = write(sfd, buffer, RESP_LEN);
 				}
@@ -146,8 +142,6 @@ int main(int argc, char **argv) {
 	char *listen_ip = NULL;
 	char *listen_port_err;
 	uint16_t listen_port;
-	// init stats packet
-	memset(&stats, 0, sizeof(stat_t));
 	while ((opt = getopt(argc, argv, "s:h")) != -1) {
 	  switch (opt) {
 	  case 'h':
@@ -203,13 +197,15 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;   
 	}
 
+	DEBUG("Sender connected\n");
+
 	/* Data array initialization */
 	int i=0;
 	for(;i<N;i++){
 		window[i] = NULL;
 	}
 
-	memset(stats, 0, sizeof(stat_t));
+	memset(&stats, 0, sizeof(stat_t));
 
 	receiver_handler(sfd);
 

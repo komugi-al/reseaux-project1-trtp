@@ -1,0 +1,10 @@
+Groupe 19
+1) receiver: fonctionnait bien et renvoie bien des acks avec des paquets simples
+2) sender: fonctionne bien avec des petits paquets, mais bug avec bcp de paquets envoyés.
+
+Groupe 115
+1) receiver: fonctionnait bien et renvoie bien des acks avec des paquets simples, aucun soucis, avec plusieurs paquets envoyés, le receiver renvoie bien ses acks. Ne s'arrête pas lors d'un end of file
+
+2) sender : envoi de deux paquets, erreurs au niveau des decodages de paquets probablement venant du sender, réception d'une erreur du pkt_decode (noheader) puis d'une erreur E_LEN.
+
+Erreur avec le sender qui renvoie le next_seqnum au lieu du last ack lors de la terminaison de la transmission

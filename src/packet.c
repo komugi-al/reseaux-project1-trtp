@@ -20,7 +20,9 @@ pkt_t* pkt_new()
 
 void pkt_del(pkt_t *pkt)
 {
-	free(pkt->payload);
+	if(pkt->payload != NULL){
+		free(pkt->payload);
+	}
 	free(pkt);
 }
 
@@ -51,7 +53,9 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	pkt_t* pkt_tmp = pkt_new();
 	memcpy(pkt_tmp, (pkt_t*) data, sizeof(pkt_t));
 
-	if((size_t)predict_header_length(pkt_tmp) > len) return E_NOHEADER; 
+	if((size_t)predict_header_length(pkt_tmp) > len) {
+		return E_NOHEADER; 
+	}
 
 	// Set common struct fields to check for errors in the header
 	ret[0] = pkt_set_type(pkt_tmp, pkt_tmp->type);
@@ -68,8 +72,8 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	// If there are errors, return the first one encountered
 	check_errors(ret, 6);
 	if(ret[0]){
-	  fprintf(stderr, "Error: %s\n", STATUS_CODE_STR[ret[0]]);
-  	  return ret[0];	
+	  	fprintf(stderr, "Error: %s\n", STATUS_CODE_STR[ret[0]]);
+  	  	return ret[0];	
 	}
 
 	// Prepare to check CRC1 as well as the size of the data received
@@ -82,7 +86,9 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 		crc = compute_crc((Bytef*)pkt_tmp, 8);
 		// Set length to the right endianness
 		ret[0] = pkt_set_length(pkt_tmp, ntohs(pkt_tmp->length));
-		if(ret[0]) return ret[0];
+		if(ret[0]) {
+			return ret[0];
+		}
 		total = !old_tr ? 12 + pkt_tmp->length + 4 : 12;
 	}else{
 		Bytef header[6];
@@ -93,11 +99,17 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 	}
 
 	// Check if the given length is consistent
-	if(total != len) return E_UNCONSISTENT;
+	if(total != len){
+	  	return E_UNCONSISTENT;
+	}
 	// Checks if packet type is PTYPE_DATA then verify consistency
-	if(pkt_tmp->type == 1 && pkt_tmp->tr && pkt_tmp->length != 0) return E_UNCONSISTENT;
+	if(pkt_tmp->type == 1 && pkt_tmp->tr && pkt_tmp->length != 0){
+	  	return E_UNCONSISTENT;
+	}
 	// Checks if the crc is correct
-	if(crc != original_crc) return E_CRC;
+	if(crc != original_crc){
+	  	return E_CRC;
+	}
 
 	// Initializing common fields
 	pkt->window = pkt_tmp->window;
@@ -115,18 +127,24 @@ pkt_status_code pkt_decode(const char *data, const size_t len, pkt_t *pkt)
 		ret[1] = pkt_set_crc2(pkt_tmp, ntohl(*(uint32_t*)(data+offset)));
 
 		check_errors(ret, 2);
-		if(ret[0]) return ret[0];	
+		if(ret[0]){
+		  	return ret[0];	
+		}
 
 		// Checks for the CRC2
 		original_crc = (uLong) pkt_get_crc2(pkt_tmp); 
 		crc = compute_crc((Bytef*)pkt_tmp->payload, pkt_tmp->length);
 
-		if(crc != original_crc) return E_CRC;
+		if(crc != original_crc){
+		  	return E_CRC;
+		}
 
 		pkt->length = pkt_tmp->length;
 		pkt->payload = pkt_tmp->payload;
 		pkt->crc2 = pkt_tmp->crc2;
 	}
+
+	free(pkt_tmp);
 
 	return PKT_OK;
 }

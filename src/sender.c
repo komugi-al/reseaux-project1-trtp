@@ -10,6 +10,7 @@
 #include <fcntl.h>
 
 #include <time.h>
+#include <errno.h>
 
 #include "log.h"
 #include "socket_helpers.h"
@@ -18,8 +19,8 @@
 
 pkt_t* windows[N];
 uint8_t start_window = 0;
+uint8_t size_window = 0;
 uint8_t next_seqnum = 0;
-bool eot = false;
 stat_t stats;
 
 int print_usage(char *prog_name) {
@@ -32,25 +33,27 @@ int print_usage(char *prog_name) {
  */
 void clear_received_packets(int recv_seqnum){
 	uint8_t min = start_window;
-	uint8_t max = (start_window+N) % MAX_SEQ_SIZE;
+	uint8_t max = (start_window+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			stats.packet_ignored += 1;
 			ERROR("Unexpected seqnum\n");
+			return;
 		} 
 	}else{
 		if(recv_seqnum < min || recv_seqnum >= max){
 			stats.packet_ignored += 1;
 			ERROR("Unexpected seqnum\n");
+			return;
 		}
 	}
 	
 		
 	int idx = recv_seqnum % N;
 	while(start_window != idx){
-		DEBUG("start_window: %d, recv_seqnum: %d, windows[x] == NULL: %d\n", start_window, recv_seqnum, windows[start_window]==NULL);
 		pkt_del(windows[start_window]);
 		windows[start_window] = NULL;
+		size_window++;
 		start_window = (start_window + 1) % N;
 	}	
 }
@@ -62,7 +65,7 @@ pkt_t* create_and_save_packet_data(char* buffer, int len){
 	// Maybe checking return values of setters would be a good idea
 	// Create a new packet and set corresponding fields
 	pkt_t* new_pkt = pkt_new();
-	pkt_set_type(new_pkt, 0b01);
+	pkt_set_type(new_pkt, 1);
 	pkt_set_seqnum(new_pkt, next_seqnum);
 	time_t second = 0;
 	time(&second);
@@ -71,12 +74,13 @@ pkt_t* create_and_save_packet_data(char* buffer, int len){
 
 	windows[next_seqnum % N] = new_pkt;
 
-	next_seqnum++;
-	
+	next_seqnum = (next_seqnum + 1) % MAX_SEQ_SIZE;
+
 	return new_pkt;
 }
 
 void encode_and_send_packet_data(pkt_t* pkt, int fd){
+	DEBUG("Sending packet, seqnum %d\n", pkt->seqnum);
 	size_t length = MAX_PKT_SIZE;
 	char* new_buffer = (char*) malloc(length);
 	time_t second = 0;
@@ -93,100 +97,105 @@ void encode_and_send_packet_data(pkt_t* pkt, int fd){
 		ERROR("Error with write() in encode_and_send_packet_data()\n");
 		ERROR("Bytes written: %lu, Bytes expected: %lu\n", n_ret, length);
 	}
+
+	free(new_buffer);
 }
 
 void resend_timedout_packet(int sfd, int timeout){
-	int idx = start_window;
-	int i = 0;
+	uint8_t idx = start_window;
 	time_t second = 0;
 	time(&second);
-	while(windows[idx] != NULL && i < N){
-		if(difftime(windows[idx]->timestamp, second-timeout) <= 0){
-			stats.packet_retransmitted += 1;
-			encode_and_send_packet_data(windows[idx], sfd);
-			idx = idx + 1 % N;
-		}
-		i++;
+	while(windows[idx] != NULL && (difftime(windows[idx]->timestamp, second-(timeout/1000)) <= 0)){
+		DEBUG("Retransmitting\n");
+		stats.packet_retransmitted += 1;
+		encode_and_send_packet_data(windows[idx], sfd);
+		idx = (idx + 1) % N;
+	}
+}
+
+void compute_rtt(int timestamp){
+	time_t now = 0;
+	time(&now);
+	int time = now - timestamp;
+	if(time < stats.min_rtt){
+		stats.min_rtt = time;
+	}
+	if(time > stats.max_rtt){
+		stats.max_rtt = time;
 	}
 }
 
 void sender_handler(const int sfd, int fdin){
 	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fdin, .events=POLLIN}};
 	int n_fds = 2;
-	int timeout = 50;
-	int ret;
+	int timeout = 1000;
+	bool eot = false;
+	bool end = false;
+	uint8_t receiver_window = 1;
 	int n_read = 0;
-	uint8_t rwindow = 1;
-	uint8_t end = false;
 	while(!end && n_read != -1){
-		
-		resend_timedout_packet(sfd, timeout);
 
-		ret = poll(fds, n_fds, timeout);
-		if(ret == -1) {
+		if(poll(fds, n_fds, timeout) == -1){
 			ERROR("Error with poll()\n");
 		} else {
 			char buffer[MAX_PAYLOAD_SIZE];
-			pkt_t* pkt = pkt_new();
+			pkt_t* pkt = NULL;
+
 			for(int i=0; i<n_fds; i++){
 
 				if(!fds[i].revents) continue;
 
-				if(fds[i].fd==fdin && rwindow != 0 && !eot){
+				if(fds[i].fd==fdin && receiver_window && !eot){
 					DEBUG("Reading from stdin\n");
 					stats.data_sent += 1;
-					rwindow--;
+					receiver_window--;
+					size_window--;
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
 					pkt = create_and_save_packet_data(buffer, n_read);
 					encode_and_send_packet_data(pkt, sfd);
 
-					if(n_read==0) {
+					if(n_read==0){
 						DEBUG("EOF received\n");
-						eot = true;
+						eot=true;
+						fds[1].fd = -1;
+						n_fds = 1;
 					}
-				} else if(fds[i].fd==sfd) { // Data from socket (ACK & NACK)
+				} else if (fds[i].fd==sfd) {
 					DEBUG("Reading from socket\n");
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
-					if(n_read >= 0){
-						DEBUG("read() return >= 0\n");
-						ret = pkt_decode(buffer, n_read, pkt);
+					if(n_read == -1){
+						perror("Error while reading socket");
+					}else{
+						pkt = pkt_new();
+						int ret = pkt_decode(buffer, n_read, pkt);
 						if(ret) {
-							ERROR("Error with pkt_decode() %d read %d\n", ret, n_read);
+							ERROR("Error with pkt_decode() %d\n", ret);
 						} else {
-							if(pkt->seqnum == next_seqnum){
-								rwindow = pkt->window;
-							}
-							if(pkt->type == PTYPE_ACK) {
-								stats.ack_received +=1;
+							if(pkt->type == PTYPE_ACK){
 								DEBUG("pkt->type is PTYPE_ACK\n");
-								
-								/* Check RTT */
-								time_t now = 0;
-								time(&now);
-								int time = now - pkt->timestamp;
-								if(time < stats.min_rtt){
-									stats.min_rtt = time;
-								}
-								if(time > stats.max_rtt){
-									stats.max_rtt = time;
-								}
+								stats.ack_received += 1;
 
-								/* If end of transmission, stop*/
-								if(eot && (pkt->seqnum == next_seqnum)) end = true; 
+								compute_rtt(pkt->timestamp);
+
+								if(eot && pkt->seqnum == next_seqnum) end = true;
 								DEBUG("pkt->seqnum %d, next_seqnum %d\n", pkt->seqnum, next_seqnum);
 								clear_received_packets(pkt->seqnum);
-							}else if(pkt->type == PTYPE_NACK){
-								stats.nack_received +=1;
+								if(pkt->window > size_window){
+									receiver_window = pkt->window;
+								}
+							} else if(pkt->type == PTYPE_NACK){
 								DEBUG("pkt->type is PTYPE_NACK\n");
-								/* Send a packet again if there was an error */
+								stats.nack_received += 1;
 								encode_and_send_packet_data(windows[pkt->seqnum%N], sfd);
 							}
 						}
+						pkt_del(pkt);
 					}
 				}
-				fflush(NULL);
 			}
+			fflush(NULL);
 		}
+		resend_timedout_packet(sfd, timeout);
 	}
 }
 
@@ -198,10 +207,6 @@ int main(int argc, char **argv) {
 	char *receiver_ip = NULL;
 	char *receiver_port_err;
 	uint16_t receiver_port;
-	// init stats packet
-	memset(&stats, 0, sizeof(stat_t));
-	stats.min_rtt = INT_MAX;
-	stats.max_rtt= INT_MIN;
 
 	while ((opt = getopt(argc, argv, "f:s:h")) != -1) {
 		switch (opt) {
@@ -230,17 +235,8 @@ int main(int argc, char **argv) {
 		return print_usage(argv[0]);
 	}
 
-	ASSERT(1 == 1); // Try to change it to see what happens when it fails
-	DEBUG_DUMP("Some bytes", 11); // You can use it with any pointer type
-
-		// This is not an error per-se.
 	ERROR("Sender has following arguments: filename is %s, stats_filename is %s, receiver_ip is %s, receiver_port is %u", filename, stats_filename, receiver_ip, receiver_port);
 
-	DEBUG("You can only see me if %s", "you built me using `make debug`");
-	ERROR("This is not an error, %s", "now let's code!");
-
-	// Now let's code!
-		
 	//Create the FD who would need to get the data
 	int fd = filename == NULL ? 0 : open(filename, O_RDONLY);
 	if(fd < 0) {
@@ -257,9 +253,16 @@ int main(int argc, char **argv) {
 	}
 	int sfd = create_socket(NULL, -1, &addr, receiver_port);
 
-	memset(windows, 0, sizeof(windows));
-	memset(stats, 0, sizeof(stat_t));
+	if(sfd == -1) {
+		ERROR("Couldn't create socket\n");
+		return EXIT_FAILURE;
+	}
 
+	memset(windows, 0, sizeof(windows));
+
+	memset(&stats, 0, sizeof(stat_t));
+	stats.min_rtt = INT_MAX;
+	stats.max_rtt= INT_MIN;
 
 	/* Process I/O */
 	sender_handler(sfd, fd);
