@@ -21,6 +21,29 @@ int print_usage(char *prog_name) {
 	return EXIT_FAILURE;
 }
 
+void send_statistics(const char* filename){
+	FILE *fd = filename == NULL ? stderr : fopen(filename, "w");
+	if(fd == NULL) {
+		fprintf(stderr, "Error while opening file.\n");
+		fprintf(stderr, "Writing to stderr instead.\n");
+		fd = stderr;
+	}
+
+	fprintf(fd, "data_sent:%d\n", stats.data_sent);
+	fprintf(fd, "data_received:%d\n", stats.data_received);
+	fprintf(fd, "data_truncated_received:%d\n", stats.data_truncated_received);
+	fprintf(fd, "ack_sent:%d\n", stats.ack_sent);
+	fprintf(fd, "ack_received:%d\n", stats.ack_received);
+	fprintf(fd, "nack_sent:%d\n", stats.nack_sent);
+	fprintf(fd, "nack_received:%d\n", stats.nack_received);
+	fprintf(fd, "packets_ignored:%d\n", stats.packet_ignored);
+	fprintf(fd, "packets_duplicated:%d\n", stats.packet_duplicated);
+
+	if(fd != stderr){
+		fclose(fd);
+	}
+}
+
 /* Handle a packet
  * @return: 0 when all data has been received, 1 when a packet can be send back, 2 when the packet had to be ignored
  */
@@ -218,14 +241,9 @@ int main(int argc, char **argv) {
 
 	receiver_handler(sfd);
 
-	close(sfd);
+	send_statistics(stats_filename);
 
-	ERROR("Data received : %d\n", stats.data_received);
-	ERROR("Data truncated recieved : %d\n", stats.data_truncated_received);
-	ERROR("Ack sent : %d\n", stats.ack_sent);
-	ERROR("Nack sent : %d\n", stats.nack_sent);
-	ERROR("Ignored packets : %d\n", stats.packet_ignored);
-	ERROR("Duplicated packets : %d\n", stats.packet_duplicated);
+	close(sfd);
 
 	return EXIT_SUCCESS;
 }

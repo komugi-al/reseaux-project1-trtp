@@ -28,6 +28,31 @@ int print_usage(char *prog_name) {
     return EXIT_FAILURE;
 }
 
+void send_statistics(const char* filename){
+	FILE *fd = filename == NULL ? stderr : fopen(filename, "w");
+	if(fd == NULL) {
+		fprintf(stderr, "Error while opening file.\n");
+		fprintf(stderr, "Writing to stderr instead.\n");
+		fd = stderr;
+	}
+
+	fprintf(fd, "data_sent:%d\n", stats.data_sent);
+	fprintf(fd, "data_received:%d\n", stats.data_received);
+	fprintf(fd, "data_truncated_received:%d\n", stats.data_truncated_received);
+	fprintf(fd, "ack_sent:%d\n", stats.ack_sent);
+	fprintf(fd, "ack_received:%d\n", stats.ack_received);
+	fprintf(fd, "nack_sent:%d\n", stats.nack_sent);
+	fprintf(fd, "nack_received:%d\n", stats.nack_received);
+	fprintf(fd, "packets_ignored:%d\n", stats.packet_ignored);
+	fprintf(fd, "min_rtt:%d\n", stats.min_rtt);
+	fprintf(fd, "max_rtt:%d\n", stats.max_rtt);
+	fprintf(fd, "packets_retransmitted:%d\n", stats.packet_retransmitted);
+
+	if(fd != stderr){
+		fclose(fd);
+	}
+}
+
 /*
  *	Clear all packets received to a valid seqnum and update de start_window value to the next not yet received packet
  */
@@ -270,13 +295,7 @@ int main(int argc, char **argv) {
 	/* Process I/O */
 	sender_handler(sfd, fd);
 
-	ERROR("Data sent : %d\n", stats.data_sent);
-	ERROR("Ack received : %d\n", stats.ack_received);
-	ERROR("Nack received : %d\n", stats.nack_received);
-	ERROR("Ignored packets : %d\n", stats.packet_ignored);
-	ERROR("Retransmitted packets : %d\n", stats.packet_retransmitted);
-	ERROR("Min RTT : %d\n", stats.min_rtt);
-	ERROR("Max RTT : %d\n", stats.max_rtt);
+	send_statistics(stats_filename);
 
 	close(fd);
 	close(sfd);
