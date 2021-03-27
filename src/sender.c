@@ -32,8 +32,8 @@ int print_usage(char *prog_name) {
  *	Clear all packets received to a valid seqnum and update de start_window value to the next not yet received packet
  */
 void clear_received_packets(int recv_seqnum){
-	uint8_t min = start_window;
-	uint8_t max = (start_window+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
+	uint8_t min = next_seqnum;
+	uint8_t max = (next_seqnum+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
 	if(max < min){
 		if(recv_seqnum < min && recv_seqnum >= max){
 			stats.packet_ignored += 1;
@@ -178,8 +178,11 @@ void sender_handler(const int sfd, int fdin){
 								compute_rtt(pkt->timestamp);
 
 								if(eot && pkt->seqnum == next_seqnum) end = true;
+
 								DEBUG("pkt->seqnum %d, next_seqnum %d\n", pkt->seqnum, next_seqnum);
+								
 								clear_received_packets(pkt->seqnum);
+
 								if(pkt->window > size_window){
 									receiver_window = pkt->window;
 								}

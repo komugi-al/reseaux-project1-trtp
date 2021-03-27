@@ -13,7 +13,8 @@
 pkt_t *window[N];
 uint8_t window_size = 31; // Logical size
 uint32_t pkt_last_timestamp;
-uint8_t next_seqnum;
+uint8_t next_seqnum = 0;
+uint8_t last_ack_seqnum = 0;
 stat_t stats;
 
 int print_usage(char *prog_name) {
@@ -28,8 +29,12 @@ int handle_packet(char* buffer, int length){
 	/* Initialisation of received packet */
 	pkt_t* recv_pkt = pkt_new();
 	int ret = 1;
+
 	/* If there was any errors during packet decoding, ignore it */
-	if(pkt_decode(buffer, length, recv_pkt)) return 2;
+	if(pkt_decode(buffer, length, recv_pkt)){
+	  ERROR("Could not decode packet\n");
+  	  return 2;
+	}
 
 	DEBUG("recv_pkt->length %d\n", recv_pkt->length);
 	
@@ -53,7 +58,7 @@ int handle_packet(char* buffer, int length){
 	}
 
 	/* End of data transmission */
-	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
+	if(!pkt_get_length(recv_pkt) && (recv_seqnum == last_ack_seqnum)){
 		ret = 0;
 	}
 	
@@ -73,6 +78,9 @@ int handle_packet(char* buffer, int length){
 		stats.ack_sent += 1;
 		DEBUG("Starting ACK\n");
 		pkt_set_type(resp_pkt, 2);
+
+		/* Set the ack seqnum */
+		last_ack_seqnum = next_seqnum;
 		
 		/* Add the packet to the buffer */
 		if(window[recv_seqnum % N] == NULL){

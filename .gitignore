@@ -1,3 +1,9 @@
 *.o
 *.swp
 result.txt
+*.log
+sender
+receiver
+link_sim
+input_file
+received_file

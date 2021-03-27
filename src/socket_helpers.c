@@ -23,7 +23,7 @@ int create_socket(struct sockaddr_in6 *source_addr,
                  int src_port,
                  struct sockaddr_in6 *dest_addr,
                  int dst_port){
-	int sock = socket(AF_INET6, SOCK_DGRAM, 17); // UDP = 17
+	int sock = socket(AF_INET6, SOCK_DGRAM, 0); // UDP = 17
 	if(sock == -1){
 		fprintf(stderr, "could not create the IPv6 SOCK_DGRAM socket");
 		return -1;
