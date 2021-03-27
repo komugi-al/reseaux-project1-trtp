@@ -47,7 +47,10 @@ clean:
 mrproper:
 	rm -f $(SENDER) $(RECEIVER) $(PACKET)
 
-cm: clean mrproper
+delog:
+	rm -f *.log received_file input_file
+
+cm: clean mrproper delog
 
 # It is likely that you will need to update this
 tests: all

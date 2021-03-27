@@ -128,7 +128,7 @@ void compute_rtt(int timestamp){
 void sender_handler(const int sfd, int fdin){
 	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fdin, .events=POLLIN}};
 	int n_fds = 2;
-	int timeout = 1000;
+	int timeout = 3000;
 	bool eot = false;
 	bool end = false;
 	uint8_t receiver_window = 1;
@@ -155,7 +155,7 @@ void sender_handler(const int sfd, int fdin){
 					encode_and_send_packet_data(pkt, sfd);
 
 					if(n_read==0){
-						DEBUG("EOF received\n");
+						DEBUG("EOT received\n");
 						eot=true;
 						fds[1].fd = -1;
 						n_fds = 1;
@@ -164,7 +164,7 @@ void sender_handler(const int sfd, int fdin){
 					DEBUG("Reading from socket\n");
 					n_read = read(fds[i].fd, buffer, MAX_PAYLOAD_SIZE);
 					if(n_read == -1){
-						perror("Error while reading socket");
+						perror("Couldn't read socket\n");
 					}else{
 						pkt = pkt_new();
 						int ret = pkt_decode(buffer, n_read, pkt);
