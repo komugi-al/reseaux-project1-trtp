@@ -14,11 +14,11 @@ if [ ! -z "$VALGRIND" ] ; then
 	valgrind_receiver="valgrind -s --leak-check=full --log-file=valgrind_receiver.log"
 fi
 
-./link_sim -p 1341 -P 2456 -l $2 -d $3 -R  &> link.log &
+./link_sim -p 1341 -P 2456 -l $2 -d $3 -e $4 -R  &> link.log &
 link_pid=$!
 
 # On lance le receiver et capture sa sortie standard
-$valgrind_receiver ./receiver :: 2456 > received_file  2> receiver.log &
+$valgrind_receiver ./receiver -s receiver.csv :: 2456 > received_file  2> receiver.log &
 receiver_pid=$!
 
 cleanup()
@@ -30,7 +30,7 @@ cleanup()
 trap cleanup SIGINT  # Kill les process en arrière plan en cas de ^-C
 
 # On démarre le transfert
-if ! $valgrind_sender ./sender ::1 1341 < input_file 2> sender.log ; then
+if ! $valgrind_sender ./sender -s sender.csv ::1 1341 < input_file 2> sender.log ; then
   echo "Crash du sender!"
   cat sender.log
   err=1  # On enregistre l'erreur
@@ -67,3 +67,33 @@ else
   echo "Le transfert est réussi!"
   exit ${err:-0}  # En cas d'erreurs avant, on renvoie le code d'erreur
 fi
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 968maxresident)k
+0inputs+0outputs (0major+24minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 924maxresident)k
+0inputs+0outputs (0major+23minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 964maxresident)k
+0inputs+0outputs (0major+24minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 1048maxresident)k
+0inputs+0outputs (0major+26minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 968maxresident)k
+0inputs+0outputs (0major+24minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 1064maxresident)k
+0inputs+0outputs (0major+26minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 952maxresident)k
+0inputs+0outputs (0major+24minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 1048maxresident)k
+0inputs+0outputs (0major+25minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 1064maxresident)k
+0inputs+0outputs (0major+26minor)pagefaults 0swaps
+Command exited with non-zero status 127
+0.00user 0.00system 0:00.00elapsed ?%CPU (0avgtext+0avgdata 952maxresident)k
+0inputs+0outputs (0major+24minor)pagefaults 0swaps
