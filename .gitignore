@@ -7,3 +7,5 @@ receiver
 link_sim
 input_file
 received_file
+logs
+*.csv

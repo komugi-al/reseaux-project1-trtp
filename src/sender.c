@@ -21,6 +21,7 @@ pkt_t* windows[N];
 uint8_t start_window = 0;
 uint8_t size_window = 0;
 uint8_t next_seqnum = 0;
+time_t timeout_counter = 0;
 stat_t stats;
 
 int print_usage(char *prog_name) {
@@ -36,17 +37,17 @@ void send_statistics(const char* filename){
 		fd = stderr;
 	}
 
-	fprintf(fd, "data_sent:%d\n", stats.data_sent);
-	fprintf(fd, "data_received:%d\n", stats.data_received);
-	fprintf(fd, "data_truncated_received:%d\n", stats.data_truncated_received);
-	fprintf(fd, "ack_sent:%d\n", stats.ack_sent);
-	fprintf(fd, "ack_received:%d\n", stats.ack_received);
-	fprintf(fd, "nack_sent:%d\n", stats.nack_sent);
-	fprintf(fd, "nack_received:%d\n", stats.nack_received);
-	fprintf(fd, "packets_ignored:%d\n", stats.packet_ignored);
-	fprintf(fd, "min_rtt:%d\n", stats.min_rtt);
-	fprintf(fd, "max_rtt:%d\n", stats.max_rtt);
-	fprintf(fd, "packets_retransmitted:%d\n", stats.packet_retransmitted);
+	fprintf(fd, "data_sent,%d\n", stats.data_sent);
+	fprintf(fd, "data_received,%d\n", stats.data_received);
+	fprintf(fd, "data_truncated_received,%d\n", stats.data_truncated_received);
+	fprintf(fd, "ack_sent,%d\n", stats.ack_sent);
+	fprintf(fd, "ack_received,%d\n", stats.ack_received);
+	fprintf(fd, "nack_sent,%d\n", stats.nack_sent);
+	fprintf(fd, "nack_received,%d\n", stats.nack_received);
+	fprintf(fd, "packets_ignored,%d\n", stats.packet_ignored);
+	fprintf(fd, "min_rtt,%d\n", stats.min_rtt*1000);
+	fprintf(fd, "max_rtt,%d\n", stats.max_rtt*1000);
+	fprintf(fd, "packets_retransmitted,%d\n", stats.packet_retransmitted);
 
 	if(fd != stderr){
 		fclose(fd);
@@ -57,23 +58,6 @@ void send_statistics(const char* filename){
  *	Clear all packets received to a valid seqnum and update de start_window value to the next not yet received packet
  */
 void clear_received_packets(int recv_seqnum){
-	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
-	if(max < min){
-		if(recv_seqnum < min && recv_seqnum >= max){
-			stats.packet_ignored += 1;
-			ERROR("Unexpected seqnum\n");
-			return;
-		} 
-	}else{
-		if(recv_seqnum < min || recv_seqnum >= max){
-			stats.packet_ignored += 1;
-			ERROR("Unexpected seqnum\n");
-			return;
-		}
-	}
-	
-		
 	int idx = recv_seqnum % N;
 	while(start_window != idx){
 		pkt_del(windows[start_window]);
@@ -143,17 +127,17 @@ void compute_rtt(int timestamp){
 	time(&now);
 	int time = now - timestamp;
 	if(time < stats.min_rtt){
-		stats.min_rtt = time;
+		stats.min_rtt = time*1000;
 	}
 	if(time > stats.max_rtt){
-		stats.max_rtt = time;
+		stats.max_rtt = time*1000;
 	}
 }
 
 void sender_handler(const int sfd, int fdin){
 	struct pollfd fds[] = {{.fd=sfd, .events=POLLIN},{.fd=fdin, .events=POLLIN}};
 	int n_fds = 2;
-	int timeout = 3000;
+	int timeout = 5000;
 	bool eot = false;
 	bool end = false;
 	uint8_t receiver_window = 1;
@@ -182,6 +166,7 @@ void sender_handler(const int sfd, int fdin){
 					if(n_read==0){
 						DEBUG("EOT received\n");
 						eot=true;
+						time(&timeout_counter);
 						fds[1].fd = -1;
 						n_fds = 1;
 					}
@@ -196,12 +181,23 @@ void sender_handler(const int sfd, int fdin){
 						if(ret) {
 							ERROR("Error with pkt_decode() %d\n", ret);
 						} else {
+							if(!timeout_counter){
+								time(&timeout_counter);
+							}
 							if(pkt->type == PTYPE_ACK){
 								DEBUG("pkt->type is PTYPE_ACK\n");
 								stats.ack_received += 1;
-
+								
 								compute_rtt(pkt->timestamp);
 
+								if(stats.max_rtt > timeout){
+									timeout = stats.max_rtt;
+								}
+
+								if(!timeout_counter){
+									time(&timeout_counter);
+								}
+								
 								if(eot && pkt->seqnum == next_seqnum) end = true;
 
 								DEBUG("pkt->seqnum %d, next_seqnum %d\n", pkt->seqnum, next_seqnum);
@@ -223,7 +219,13 @@ void sender_handler(const int sfd, int fdin){
 			}
 			fflush(NULL);
 		}
-		resend_timedout_packet(sfd, timeout);
+		time_t now = 0;
+		time(&now);
+		if(timeout_counter && (now-timeout_counter >= ((timeout*4)/1000))){
+		  	end = true;
+		}else{	  
+			resend_timedout_packet(sfd, timeout);
+		}
 	}
 }
 

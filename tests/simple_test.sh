@@ -4,7 +4,7 @@
 rm -f received_file input_file
 
 # Fichier au contenu aléatoire de 512 octets
-dd if=/dev/urandom of=input_file bs=1 count=750 &> /dev/null
+dd if=/dev/urandom of=input_file bs=1 count=$1 &> /dev/null
 
 # On lance le simulateur de lien avec 10% de pertes et un délais de 50ms
 valgrind_sender=""
@@ -14,7 +14,7 @@ if [ ! -z "$VALGRIND" ] ; then
 	valgrind_receiver="valgrind -s --leak-check=full --log-file=valgrind_receiver.log"
 fi
 
-./link_sim -p 1341 -P 2456 -l 20 -d 500 -R  &> link.log &
+./link_sim -p 1341 -P 2456 -l $2 -d $3 -R  &> link.log &
 link_pid=$!
 
 # On lance le receiver et capture sa sortie standard
@@ -37,7 +37,6 @@ if ! $valgrind_sender ./sender ::1 1341 < input_file 2> sender.log ; then
 fi
 
 sleep 5 # On attend 5 seconde que le receiver finisse
-echo -n "receiver terminated"
 
 if kill -0 $receiver_pid &> /dev/null ; then
   echo "Le receiver ne s'est pas arreté à la fin du transfert!"
@@ -55,8 +54,6 @@ sleep 3
 
 # On arrête le simulateur de lien
 kill -9 $link_pid &> /dev/null
-
-sleep 3
 
 kill -9 $sender_pid &> /dev/null
 

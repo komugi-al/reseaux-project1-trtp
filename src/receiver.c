@@ -29,19 +29,38 @@ void send_statistics(const char* filename){
 		fd = stderr;
 	}
 
-	fprintf(fd, "data_sent:%d\n", stats.data_sent);
-	fprintf(fd, "data_received:%d\n", stats.data_received);
-	fprintf(fd, "data_truncated_received:%d\n", stats.data_truncated_received);
-	fprintf(fd, "ack_sent:%d\n", stats.ack_sent);
-	fprintf(fd, "ack_received:%d\n", stats.ack_received);
-	fprintf(fd, "nack_sent:%d\n", stats.nack_sent);
-	fprintf(fd, "nack_received:%d\n", stats.nack_received);
-	fprintf(fd, "packets_ignored:%d\n", stats.packet_ignored);
-	fprintf(fd, "packets_duplicated:%d\n", stats.packet_duplicated);
+	fprintf(fd, "data_sent,%d\n", stats.data_sent);
+	fprintf(fd, "data_received,%d\n", stats.data_received);
+	fprintf(fd, "data_truncated_received,%d\n", stats.data_truncated_received);
+	fprintf(fd, "ack_sent,%d\n", stats.ack_sent);
+	fprintf(fd, "ack_received,%d\n", stats.ack_received);
+	fprintf(fd, "nack_sent,%d\n", stats.nack_sent);
+	fprintf(fd, "nack_received,%d\n", stats.nack_received);
+	fprintf(fd, "packets_ignored,%d\n", stats.packet_ignored);
+	fprintf(fd, "packets_duplicated,%d\n", stats.packet_duplicated);
 
 	if(fd != stderr){
 		fclose(fd);
 	}
+}
+
+int check_out_of_sequence(int seqnum){
+	uint8_t min = next_seqnum;
+	uint8_t max = (next_seqnum+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
+	if(max < min){
+		if(seqnum < min && seqnum >= max){
+			ERROR("Unexpected seqnum\n");
+			stats.packet_ignored += 1;
+			return 1;
+		}
+	}else{
+		if(seqnum < min || seqnum >= max){
+			ERROR("Unexpected seqnum\n");
+			stats.packet_ignored += 1;
+			return 1;
+		}
+	}
+	return 0;
 }
 
 /* Handle a packet
@@ -64,23 +83,6 @@ int handle_packet(char* buffer, int length){
 	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
 	
-	uint8_t min = next_seqnum;
-	uint8_t max = (next_seqnum+WINDOW_MAX_SIZE) % MAX_SEQ_SIZE;
-	if(max < min){
-		if(recv_seqnum < min && recv_seqnum >= max){
-			ERROR("Unexpected seqnum\n");
-			stats.packet_ignored += 1;
-			pkt_del(recv_pkt);
-			return 2;
-		}
-	}else{
-		if(recv_seqnum < min || recv_seqnum >= max){
-			ERROR("Unexpected seqnum\n");
-			stats.packet_ignored += 1;
-			pkt_del(recv_pkt);
-			return 2;
-		}
-	}
 
 	/* End of data transmission */
 	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
@@ -108,20 +110,22 @@ int handle_packet(char* buffer, int length){
 
 		/* Add the packet to the buffer */
 		if(window[recv_seqnum % N] == NULL){
-			window[recv_seqnum % N] = recv_pkt;
-			window_size--;
-		
-			/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
-			uint8_t idx = next_seqnum % N;
-			int n_wri;
-			while(window[idx] != NULL){
-				n_wri = write(1, window[idx]->payload, pkt_get_length(window[idx]));
-				if(n_wri == -1) ERROR("Error while writing packet to stdout\n");
-				pkt_del(window[idx]);
-				window[idx] = NULL;
-				window_size++;
-				next_seqnum = (next_seqnum + 1) % MAX_SEQ_SIZE;
-				idx = (idx + 1) % N;
+			if(!check_out_of_sequence(recv_seqnum)){
+				window[recv_seqnum % N] = recv_pkt;
+				window_size--;
+			
+				/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
+				uint8_t idx = next_seqnum % N;
+				int n_wri;
+				while(window[idx] != NULL){
+					n_wri = write(1, window[idx]->payload, pkt_get_length(window[idx]));
+					if(n_wri == -1) ERROR("Error while writing packet to stdout\n");
+					pkt_del(window[idx]);
+					window[idx] = NULL;
+					window_size++;
+					next_seqnum = (next_seqnum + 1) % MAX_SEQ_SIZE;
+					idx = (idx + 1) % N;
+				}
 			}
 			pkt_set_seqnum(resp_pkt, next_seqnum);
 		}else{
