@@ -181,7 +181,7 @@ void sender_handler(const int sfd, int fdin){
 						if(ret) {
 							ERROR("Error with pkt_decode() %d\n", ret);
 						} else {
-							if(!timeout_counter){
+							if(timeout_counter){
 								time(&timeout_counter);
 							}
 							if(pkt->type == PTYPE_ACK){
@@ -192,10 +192,6 @@ void sender_handler(const int sfd, int fdin){
 
 								if(stats.max_rtt > timeout){
 									timeout = stats.max_rtt;
-								}
-
-								if(!timeout_counter){
-									time(&timeout_counter);
 								}
 								
 								if(eot && pkt->seqnum == next_seqnum) end = true;

@@ -83,6 +83,7 @@ int handle_packet(char* buffer, int length){
 	uint8_t recv_seqnum = pkt_get_seqnum(recv_pkt);
 	pkt_last_timestamp = pkt_get_timestamp(recv_pkt);
 	
+	DEBUG("recv_seqnum = %d\n", recv_seqnum);
 
 	/* End of data transmission */
 	if(!pkt_get_length(recv_pkt) && (recv_seqnum == next_seqnum)){
@@ -117,20 +118,28 @@ int handle_packet(char* buffer, int length){
 				/* Iterate over the buffer until there is no more packets, i.d. next_seqnum hasn't arrived yet */
 				uint8_t idx = next_seqnum % N;
 				int n_wri;
+				DEBUG("Before next_seqnum = %d\n", next_seqnum);
 				while(window[idx] != NULL){
+					/* End of data transmission if packet delayed*/
+					if(!pkt_get_length(window[idx])){
+						DEBUG("EOT received\n");
+						ret = 0;
+					}
 					n_wri = write(1, window[idx]->payload, pkt_get_length(window[idx]));
 					if(n_wri == -1) ERROR("Error while writing packet to stdout\n");
 					pkt_del(window[idx]);
 					window[idx] = NULL;
 					window_size++;
 					next_seqnum = (next_seqnum + 1) % MAX_SEQ_SIZE;
+					
 					idx = (idx + 1) % N;
 				}
+				DEBUG("After next_seqnum = %d\n", next_seqnum);
 			}
-			pkt_set_seqnum(resp_pkt, next_seqnum);
 		}else{
 			stats.packet_duplicated += 1;
-		}	
+		}
+		pkt_set_seqnum(resp_pkt, next_seqnum);
 	}
 
 	size_t enco_len = RESP_LEN;
@@ -138,6 +147,8 @@ int handle_packet(char* buffer, int length){
 	pkt_set_timestamp(resp_pkt, pkt_last_timestamp);
 	pkt_encode(resp_pkt, buffer, &enco_len);
 	
+	DEBUG("pkt->seqnum = %d\n", resp_pkt->seqnum);
+
 	pkt_del(resp_pkt);
 
 	return ret;
